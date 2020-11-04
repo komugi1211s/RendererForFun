@@ -1,1 +1,3 @@
 /dist
+gmon.out
+*.rdbg

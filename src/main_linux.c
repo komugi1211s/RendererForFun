@@ -14,7 +14,7 @@ global_variable Atom wm_delete_window;
 void update_xwindow_with_drawbuffer(Display *display, Window window, GC context, XColor *bg_color, Drawing_Buffer *buffer) {
     TRACE("Drawing.");
     XSetForeground(display, context, bg_color->pixel);
-    uint32 *drawing_buffer = buffer->is_drawing_first ? buffer->first_buffer : buffer->first_buffer;
+    uint32 *drawing_buffer = buffer->is_drawing_first ? buffer->first_buffer : buffer->second_buffer;
 
     XImage image;
     image.width  = buffer->window_width;

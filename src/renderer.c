@@ -24,8 +24,8 @@ void draw_line(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1) {
     }
 
     real32 delta = (real32)(x_end - x_start);
+    ASSERT(delta > 0);
     uint32 parallel_to_axis = y_end == y_start;
-
     for (int32 t = x_start; t <= x_end; ++t) {
         real32 dt = (t - x_start) / delta;
         int32 x = t;
