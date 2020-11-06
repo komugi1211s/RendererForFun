@@ -3,6 +3,7 @@
 #include <X11/Xatom.h>
 #include <string.h>
 #include <math.h>
+#include <time.h>
 
 #include "general.h"
 #include "renderer.h"
@@ -12,7 +13,6 @@ global_variable Atom wm_protocols;
 global_variable Atom wm_delete_window;
 
 void update_xwindow_with_drawbuffer(Display *display, Window window, GC context, XColor *bg_color, Drawing_Buffer *buffer) {
-    TRACE("Drawing.");
     XSetForeground(display, context, bg_color->pixel);
     uint32 *drawing_buffer = buffer->is_drawing_first ? buffer->first_buffer : buffer->second_buffer;
 
@@ -99,8 +99,21 @@ int main(int argc, char **argv) {
                 buffer.second_buffer  = malloc(window_width * window_height * sizeof(uint32));
                 buffer.is_drawing_first = 1;
 
+                // MEMO: yanked this value from SDL_GetPerformanceFrequency.
+                // SDL_GetPerformanceFrequency returns 1000000000 if you can use CLOCK_MONOTONIC_RAW.
+                uint64 time_frequency = 1000000000;
+                uint64 start_time, start_cycle;
+
+                struct timespec _timespec_now;
+                clock_gettime(CLOCK_MONOTONIC_RAW, &_timespec_now);
+                start_time = (_timespec_now.tv_sec * time_frequency) + _timespec_now.tv_nsec;
+                start_cycle = __rdtsc();
+
                 bool32 running = 1;
                 while (running) {
+                    clock_gettime(CLOCK_MONOTONIC_RAW, &_timespec_now);
+                    start_time = (_timespec_now.tv_sec * time_frequency) + _timespec_now.tv_nsec;
+
                     XEvent event = {};
                     while(XPending(display) > 0) {
                         TRACE("Getting Event.");
@@ -129,11 +142,33 @@ int main(int argc, char **argv) {
                         }
                     }
 
-                    draw_line(&buffer, 10, 20, 80, 40);
-                    update_xwindow_with_drawbuffer(display, my_window, context,
-                                                   &approx_bg_color, &buffer);
+                    iVector2 p1 = iVec2(200, 200);
+                    iVector2 p2 = iVec2(480, 600);
+                    iVector2 p3 = iVec2(900, 10);
+                    draw_triangle(&buffer, p1, p2, p3);
 
+                    p1 = iVec2(80, 40);
+                    p2 = iVec2(100, 200);
+                    p3 = iVec2(300, 40);
+                    draw_triangle(&buffer, p1, p2, p3);
+
+                    update_xwindow_with_drawbuffer(display, my_window, context, &approx_bg_color, &buffer);
                     swap_buffer(&buffer);
+
+                    // NOTE(fuzzy): Lofted this from Handmade Hero.
+                    clock_gettime(CLOCK_MONOTONIC_RAW, &_timespec_now);
+                    uint64 end_time = (_timespec_now.tv_sec * time_frequency) + _timespec_now.tv_nsec;
+                    uint64 end_cycle = __rdtsc();
+
+                    uint64 time_elapsed = end_time - start_time;
+                    uint64 cycle_elapsed = end_cycle - start_cycle;
+
+                    real64 ms_per_frame = (1000.0f * (real64)time_elapsed) / (real64)time_frequency;
+                    real64 fps = (real64)time_frequency / (real64)time_elapsed;
+
+                    start_time = end_time;
+                    start_cycle = end_cycle;
+                    TRACE("MpF: %lf MpF, FPS: %lf, Cycle: %lu \n", ms_per_frame, fps, cycle_elapsed);
                 }
                 XCloseDisplay(display);
             } else {

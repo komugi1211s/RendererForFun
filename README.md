@@ -1,5 +1,8 @@
 # Renderer for fun.
 ソフトウェアレンダラの仕組みを学ぶ為に各OSに存在するライブラリのみを用いて書かれたレンダラ。
+このレンダラはGithubで公開されているコースの[TinyRenderer - software rendering in 500 lines of code](https://github.com/ssloy/tinyrenderer) を元に作られています。
+基本的にコードはこのコースに倣って書かれています。
+
 
 # Build
 *Linuxの場合*

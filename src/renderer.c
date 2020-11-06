@@ -1,5 +1,6 @@
 
-#define _CUR_BUF(buf) buf->is_drawing_first ? buf->first_buffer : buf->second_buffer
+#define USE_LINE_SWEEPING 1
+#define _CUR_BUF(buf)     buf->is_drawing_first ? buf->first_buffer : buf->second_buffer
 
 void swap_buffer(Drawing_Buffer *buffer) {
     buffer->is_drawing_first = !buffer->is_drawing_first;
@@ -7,8 +8,8 @@ void swap_buffer(Drawing_Buffer *buffer) {
 
 void draw_line(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1) {
     ASSERT(0 <= x0 && 0 <= x1 && 0 <= y0 && 0 <= y1);
-    ASSERT(x0 + x1 < buffer->window_width);
-    ASSERT(y0 + y1 < buffer->window_height);
+    ASSERT(x1 < buffer->window_width);
+    ASSERT(y1 < buffer->window_height);
     uint32 *buf = _CUR_BUF(buffer);
 
     int32 x_start, x_end, y_start, y_end;
@@ -24,8 +25,9 @@ void draw_line(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1) {
     }
 
     real32 delta = (real32)(x_end - x_start);
-    ASSERT(delta > 0);
-    uint32 parallel_to_axis = y_end == y_start;
+    ASSERT(delta >= 0);
+    bool32 parallel_to_axis = y_end == y_start;
+
     for (int32 t = x_start; t <= x_end; ++t) {
         real32 dt = (t - x_start) / delta;
         int32 x = t;
@@ -36,4 +38,40 @@ void draw_line(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1) {
         }
         buf[(y * buffer->window_width) + x] = 0xFFFFFFFF;
     }
+}
+
+void _line_sweeping(Drawing_Buffer *buffer, iVector2 small, iVector2 middle, iVector2 big) {
+    if (small.y > middle.y)  SWAPVAR(iVector2, small,  middle);
+    if (small.y > big.y)     SWAPVAR(iVector2,  small, big);
+    if (middle.y > big.y)    SWAPVAR(iVector2, middle,  big);
+
+    draw_line(buffer, small.x,  small.y,  middle.x,  middle.y);
+    draw_line(buffer, small.x,  small.y,  big.x,     big.y);
+    draw_line(buffer, middle.x, middle.y, big.x,     big.y);
+
+    real32 top_half_distance    = (middle.y - small.y);
+    real32 total_distance       = (big.y    - small.y);
+    real32 bottom_half_distance = (big.y    - middle.y);
+
+    for (int32 y = small.y; y < big.y; ++y) {
+        int32 x0, x1;
+        real32 total_dt = (y - small.y) / total_distance;
+        if (y < middle.y) {
+            // Top Half.
+            real32 top_half_dt    = (y - small.y)  / top_half_distance;
+            x0 = (small.x * (1.0 - top_half_dt)) + (top_half_dt * middle.x);
+        } else {
+            // Bottom Half.
+            real32 bottom_half_dt = (y - middle.y) / bottom_half_distance;
+            x0 = (middle.x * (1.0 - bottom_half_dt)) + (bottom_half_dt * big.x);
+        }
+
+        x1 = (small.x * (1.0 - total_dt)) + (total_dt * big.x);
+        draw_line(buffer, x0, y, x1, y);
+    }
+}
+
+void draw_triangle(Drawing_Buffer *buffer, iVector2 small, iVector2 middle, iVector2 big) {
+    if (USE_LINE_SWEEPING) _line_sweeping(buffer, small, middle, big);
+    else                   NOT_IMPLEMENTED;
 }
