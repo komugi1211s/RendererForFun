@@ -53,20 +53,23 @@ void _line_sweeping(Drawing_Buffer *buffer, iVector2 small, iVector2 middle, iVe
     real32 total_distance       = (big.y    - small.y);
     real32 bottom_half_distance = (big.y    - middle.y);
 
-    for (int32 y = small.y; y < big.y; ++y) {
-        int32 x0, x1;
-        real32 total_dt = (y - small.y) / total_distance;
-        if (y < middle.y) {
-            // Top Half.
-            real32 top_half_dt    = (y - small.y)  / top_half_distance;
-            x0 = (small.x * (1.0 - top_half_dt)) + (top_half_dt * middle.x);
-        } else {
-            // Bottom Half.
-            real32 bottom_half_dt = (y - middle.y) / bottom_half_distance;
-            x0 = (middle.x * (1.0 - bottom_half_dt)) + (bottom_half_dt * big.x);
-        }
-
+    int32 x0, x1;
+    for (int32 y = small.y; y < middle.y; ++y) {
+        // Draw top half.
+        real32 total_dt    = (y - small.y) / total_distance;
+        real32 top_half_dt = (y - small.y)  / top_half_distance;
+        x0 = (small.x * (1.0 - top_half_dt)) + (top_half_dt * middle.x);
         x1 = (small.x * (1.0 - total_dt)) + (total_dt * big.x);
+
+        draw_line(buffer, x0, y, x1, y);
+    }
+
+    for (int32 y = middle.y; y < big.y; ++y) {
+            // Draw bottom Half.
+        real32 total_dt       = (y - small.y) / total_distance;
+        real32 bottom_half_dt = (y - middle.y) / bottom_half_distance;
+        x0 = (middle.x * (1.0 - bottom_half_dt)) + (bottom_half_dt * big.x);
+        x1 = (small.x  * (1.0 - total_dt)) + (total_dt * big.x);
         draw_line(buffer, x0, y, x1, y);
     }
 }
