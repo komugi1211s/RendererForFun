@@ -167,10 +167,14 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             Color bg = rgb_opaque(0.0, 0.0, 0.0);
 
             size buffer_size = window_height * window_width * sizeof(uint32);
-            drawing_buffer.first_buffer  =
+            drawing_buffer.first_buffer =
                 VirtualAlloc(0, buffer_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
             drawing_buffer.second_buffer =
                 VirtualAlloc(0, buffer_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+
+            size z_buffer_size = window_height * window_width * sizeof(int32);
+            drawing_buffer.z_buffer =
+                VirtualAlloc(0, z_buffer_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
             ASSERT(drawing_buffer.first_buffer && drawing_buffer.second_buffer);
             MSG message;
@@ -198,6 +202,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
 
             VirtualFree(drawing_buffer.first_buffer, 0, MEM_RELEASE);
             VirtualFree(drawing_buffer.second_buffer, 0, MEM_RELEASE);
+            VirtualFree(drawing_buffer.z_buffer, 0, MEM_RELEASE);
         } else {
             TRACE("CreateWindowEx failed.");
             BREAK
