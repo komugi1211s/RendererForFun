@@ -27,13 +27,20 @@ typedef intptr_t  iptr;
 typedef uintptr_t uptr;
 
 #define BYTES(n) ((size)n)
-#define KILOBYTES(n) (Bytes(n)*1024)
-#define MEGABYTES(n) (Kilobytes(n)*1024)
-#define GIGABYTES(n) (Megabytes(n)*1024)
+#define KILOBYTES(n) (KILOBYTES(n)*1024)
+#define MEGABYTES(n) (MEGABYTES(n)*1024)
+#define GIGABYTES(n) (MEGABYTES(n)*1024)
 
+#if  _MSC_VER
+#define STR_RED(string) string
+#define STR_GREEN(string) string
+#define STR_YELLOW(string) string
+#else 
 #define STR_RED(string) "\033[1;31m" string "\033[0m"
 #define STR_GREEN(string) "\033[1;32m" string "\033[0m"
 #define STR_YELLOW(string) "\033[1;33m" string "\033[0m"
+#endif
+
 
 #define SWAPVAR(ty, a, b) do { ty temp = a; a = b; b = temp; } while(0)
 
@@ -41,7 +48,11 @@ typedef uintptr_t uptr;
 #define BREAK __debugbreak();
 #else
 #include <signal.h>
+#ifdef SIGTRAP
 #define BREAK raise(SIGTRAP);
+#else
+#define BREAK abort();
+#endif
 #endif
 
 #define ASSERT(expr) { \
