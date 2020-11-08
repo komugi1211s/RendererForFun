@@ -13,6 +13,8 @@ typedef struct Drawing_Buffer {
 
     uint32 *first_buffer;
     uint32 *second_buffer;
+
+    int32 *z_buffer;
 } Drawing_Buffer;
 
 typedef struct Color {
