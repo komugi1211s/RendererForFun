@@ -1,4 +1,10 @@
-typedef struct {
+#ifndef _K_RENDERER_H
+#define _K_RENDERER_H
+
+#include "maths.h"
+#include "model.h"
+
+typedef struct Drawing_Buffer {
     int32 window_width;
     int32 window_height;
 
@@ -9,34 +15,29 @@ typedef struct {
     uint32 *second_buffer;
 } Drawing_Buffer;
 
-typedef struct {
-    int32 x, y;
-} iVector2;
+typedef struct Color {
+    real32 r, g, b, a;
+} Color;
 
-typedef struct {
-    int32 x, y, z;
-} iVector3;
+Color rgb_opaque(real32 r, real32 g, real32 b) {
+    Color result;
+    result.r = r;
+    result.g = g;
+    result.b = b;
+    result.a = 1.0;
 
-typedef struct {
-    iVector2 min_v;
-    iVector2 max_v;
-} BoundingBox;
-
-
-iVector2 iVec2(int32 x, int32 y) {
-    iVector2 result = {0};
-    result.x = x;
-    result.y = y;
     return result;
 }
 
-BoundingBox BB(iVector2 one, iVector2 two) {
-    BoundingBox box;
-    box.min_v.x = one.x > two.x ? two.x : one.x;
-    box.min_v.y = one.y > two.y ? two.y : one.y;
-    box.max_v.x = one.x < two.x ? two.x : one.x;
-    box.max_v.y = one.y < two.y ? two.y : one.y;
+void swap_buffer(Drawing_Buffer *buffer);
+void clear_buffer(Drawing_Buffer *buffer, Color color);
 
-    return box;
-}
+uint32 color_to_uint32(Color *color);
 
+void draw_line(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, Color color);
+void draw_bounding_box(Drawing_Buffer *buffer, BoundingBox box, Color color);
+void draw_triangle(Drawing_Buffer *buffer, iVector2 y_sm, iVector2 y_md, iVector2 y_bg, Color color);
+
+void draw_model(Drawing_Buffer *buffer, Model *model, Color color);
+
+#endif
