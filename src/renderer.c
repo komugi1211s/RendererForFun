@@ -25,6 +25,7 @@ void clear_buffer(Drawing_Buffer *buffer, Color color) {
     
     for (uint32 t = 0; t <= total_size; ++t) {
         buf[t] = color_to_uint32(&color);
+        buffer->z_buffer[t] = -2147483648;
     }
 }
 
@@ -158,7 +159,7 @@ void _line_sweeping(Drawing_Buffer *buffer, iVector2 y_sm, iVector2 y_md, iVecto
 
     for (; y < y_md.y; ++y) {
         // Draw top half.
-        real32 total_dt    = (y - y_sm.y) / total_distance;
+        real32 total_dt    = (y - y_sm.y)  / total_distance;
         real32 top_half_dt = (y - y_sm.y)  / top_half_distance;
         x0 = (y_sm.x * (1.0 - top_half_dt)) + (top_half_dt * y_md.x);
         x1 = (y_sm.x * (1.0 - total_dt)) + (total_dt * y_bg.x);
