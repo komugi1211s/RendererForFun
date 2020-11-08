@@ -1,16 +1,21 @@
 #ifndef _K_MATHS_H
 #define _K_MATHS_H
 
+#include <emmintrin.h> // SSE2 SIMD.
+
 typedef struct iVector2 {
     int32 x, y;
+    int32 __pad, __pad2;
 } iVector2;
 
 typedef struct iVector3 {
     int32 x, y, z;
+    int32 __pad;
 } iVector3;
 
 typedef struct fVector3 {
     real32 x, y, z;
+    real32 __pad;
 } fVector3;
 
 typedef struct BoundingBox {
@@ -73,7 +78,10 @@ BoundingBox BB_iV2_Triangle(iVector2 one, iVector2 two, iVector2 three) {
 fVector3 fnormalize_fv3(fVector3 A);
 real32 fdot_fv3(fVector3 A, fVector3 B);
 fVector3 fcross_iv3(iVector3 A, iVector3 B);
+
 fVector3 fcross_fv3(fVector3 A, fVector3 B);
+fVector3 fcross_fv3_simd(fVector3 A, fVector3 B);
+
 iVector3 icross_iv3(iVector3 A, iVector3 B);
 iVector3 isub_iv3(iVector3 A, iVector3 B);
 fVector3 fsub_fv3(fVector3 A, fVector3 B);

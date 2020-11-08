@@ -1,4 +1,4 @@
-#include "maths.h"
+﻿#include "maths.h"
 
 fVector3 fcross_iv3(iVector3 A, iVector3 B) {
     fVector3 result;
@@ -33,6 +33,24 @@ fVector3 fcross_fv3(fVector3 A, fVector3 B) {
     result.y = (A.z * B.x) - (A.x * B.z);
     result.z = (A.x * B.y) - (A.y * B.x);
 
+    return result;
+}
+
+// 外積のSIMD (SSE2) 版
+// 思ったより遅い
+fVector3 fcross_fv3_simd(fVector3 A, fVector3 B) {
+    __m128 Ayzx      = _mm_set_ps(0.0, A.x, A.z, A.y);
+    __m128 Bzxy      = _mm_set_ps(0.0, B.y, B.x, B.z);
+    __m128 cls_left  = _mm_mul_ps(Ayzx, Bzxy);
+
+    __m128 Byzx      = _mm_set_ps(0.0, B.x, B.z, B.y);
+    __m128 Azxy      = _mm_set_ps(0.0, A.y, A.x, A.z);
+    __m128 cls_right = _mm_mul_ps(Byzx, Azxy);
+
+    __m128 res       = _mm_sub_ps(cls_left, cls_right);
+
+    fVector3 result;
+    _mm_store_ps((real32 *)&result, res); // fVector3 is actually padded so it's fine here
     return result;
 }
 
