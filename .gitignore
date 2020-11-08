@@ -1,3 +1,4 @@
 /dist
+/.vs
 gmon.out
 *.rdbg
