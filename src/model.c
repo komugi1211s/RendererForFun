@@ -30,12 +30,11 @@ bool32 load_model_vertices(Model *model, size_t triangle_index, ModelVertex out)
     out[0] = model->vertices[indexes.x-1];
     out[1] = model->vertices[indexes.y-1];
     out[2] = model->vertices[indexes.z-1];
-    
+
     return 1;
 }
 
 bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
-    char *start_position = obj_file;
     uint32 current_line = 0;
 
     model->num_vertices = 0;
@@ -62,7 +61,7 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
                     }
                     break;
                 } else {
-                    TRACE("Expected `usemtl` but did not match line %lu", current_line);
+                    TRACE("Expected `usemtl` but did not match line %u", current_line);
                     return 0;
                 }
             } break;
@@ -78,7 +77,7 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
             {
                 char next_char = obj_file[1];
                 if (next_char == '\0') {
-                    TRACE("Unexpected EOF while parsing Vertex at line %lu", current_line);
+                    TRACE("Unexpected EOF while parsing Vertex at line %u", current_line);
                     return 0;
                 }
 
@@ -97,14 +96,14 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
                     char *skipped;
                     result.x = strtof(obj_file, &skipped);
                     if(*skipped != ' ') {
-                        TRACE("Expected space separator, got `%c` at line %lu", *skipped, current_line);
+                        TRACE("Expected space separator, got `%c` at line %u", *skipped, current_line);
                         return 0;
                     }
                     obj_file = ++skipped;
 
                     result.y = strtof(obj_file, &skipped);
                     if(*skipped != ' ') {
-                        TRACE("Expected space separator, got `%c` at line %lu", *skipped, current_line);
+                        TRACE("Expected space separator, got `%c` at line %u", *skipped, current_line);
                         return 0;
                     }
                     obj_file = ++skipped;
@@ -114,7 +113,7 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
 
                     model->vertices[model->num_vertices++] = result;
                 } else {
-                    TRACE("Expected space separator, got `%c` at line %lu", next_char, current_line);
+                    TRACE("Expected space separator, got `%c` at line %u", next_char, current_line);
                     return 0;
                 }
             } break;
@@ -141,7 +140,7 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
                 if (*skipped == '/')
                     while(*skipped != ' ') {
                         if (*skipped == '\0') {
-                            TRACE("Unexpected EOF at line %lu", current_line);
+                            TRACE("Unexpected EOF at line %u", current_line);
                             return 0;
                         }
                         skipped++;
@@ -153,7 +152,7 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
                 if (*skipped == '/')
                     while(*skipped != ' ') {
                         if (*skipped == '\0') {
-                            TRACE("Unexpected EOF at line %lu", current_line);
+                            TRACE("Unexpected EOF at line %u", current_line);
                             return 0;
                         }
                         skipped++;
@@ -171,7 +170,7 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
             } break;
 
             default:
-                TRACE("Unexpected Char `%c` at line %lu", *obj_file, current_line);
+                TRACE("Unexpected Char `%c` at line %u", *obj_file, current_line);
                 return 0;
         }
     }

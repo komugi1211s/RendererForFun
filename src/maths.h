@@ -77,6 +77,8 @@ BoundingBox BB_iV2_Triangle(iVector2 one, iVector2 two, iVector2 three) {
 
 fVector3 fnormalize_fv3(fVector3 A);
 real32 fdot_fv3(fVector3 A, fVector3 B);
+real32 fdot_fv3_simd(fVector3 A, fVector3 B);
+
 fVector3 fcross_iv3(iVector3 A, iVector3 B);
 
 fVector3 fcross_fv3(fVector3 A, fVector3 B);

@@ -13,9 +13,12 @@ typedef struct Drawing_Buffer {
 
     uint32 *first_buffer;
     uint32 *second_buffer;
+    int32  *z_buffer;
 
-    int32 *z_buffer;
 } Drawing_Buffer;
+
+// TODO(fuzzy):
+// RGB format.
 
 typedef struct Color {
     real32 r, g, b, a;
@@ -26,7 +29,7 @@ Color rgb_opaque(real32 r, real32 g, real32 b) {
     result.r = r;
     result.g = g;
     result.b = b;
-    result.a = 1.0;
+    result.a = 0.0;
 
     return result;
 }

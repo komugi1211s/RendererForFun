@@ -36,8 +36,18 @@ fVector3 fcross_fv3(fVector3 A, fVector3 B) {
     return result;
 }
 
+// 内積のSIMD (SSE2) 版
+real32 fdot_fv3_simd(fVector3 A, fVector3 B) {
+    __m128 left  = _mm_set_ps(0.0, A.z, A.y, A.x);
+    __m128 right = _mm_set_ps(0.0, B.z, B.y, B.x);
+    __m128 muled = _mm_mul_ps(left, right);
+    ALIGN16 fVector3 result;
+
+    _mm_store_ps((real32 *)&result, muled); // fVector3 is actually padded so it's fine here
+    return result.x + result.y + result.z;
+}
+
 // 外積のSIMD (SSE2) 版
-// 思ったより遅い
 fVector3 fcross_fv3_simd(fVector3 A, fVector3 B) {
     __m128 Ayzx      = _mm_set_ps(0.0, A.x, A.z, A.y);
     __m128 Bzxy      = _mm_set_ps(0.0, B.y, B.x, B.z);
@@ -49,7 +59,7 @@ fVector3 fcross_fv3_simd(fVector3 A, fVector3 B) {
 
     __m128 res       = _mm_sub_ps(cls_left, cls_right);
 
-    fVector3 result;
+    ALIGN16 fVector3 result;
     _mm_store_ps((real32 *)&result, res); // fVector3 is actually padded so it's fine here
     return result;
 }
@@ -63,7 +73,6 @@ iVector3 icross_iv3(iVector3 A, iVector3 B) {
 
     return result;
 }
-
 
 iVector3 isub_iv3(iVector3 A, iVector3 B) {
     A.x -= B.x;

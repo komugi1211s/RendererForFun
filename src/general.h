@@ -41,7 +41,6 @@ typedef uintptr_t uptr;
 #define STR_YELLOW(string) "\033[1;33m" string "\033[0m"
 #endif
 
-
 #define SWAPVAR(ty, a, b) do { ty temp = a; a = b; b = temp; } while(0)
 
 #ifdef _MSC_VER
@@ -54,6 +53,14 @@ typedef uintptr_t uptr;
 #define BREAK abort();
 #endif
 #endif
+
+// SIMD ALIGNMENT DECLARATION
+#ifdef _MSC_VER
+#define ALIGN16 __declspec(align(16))
+#else
+#define ALIGN16 __attribute__((aligned(16)))
+#endif
+
 
 #define ASSERT(expr) { \
     if (!(expr)) { \

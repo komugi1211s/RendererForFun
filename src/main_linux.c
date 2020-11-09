@@ -6,7 +6,9 @@
 #include <time.h>
 
 #include "general.h"
-#include "renderer.h"
+
+#include "maths.c"
+#include "model.c"
 #include "renderer.c"
 
 global_variable Atom wm_protocols;
@@ -21,16 +23,48 @@ void update_xwindow_with_drawbuffer(Display *display, Window window, GC context,
     image.height = buffer->window_height;
     image.depth  = 24;
     image.bits_per_pixel = 32;
-    image.bytes_per_line = buffer->window_width * 4;
-    image.bitmap_pad = 8;
+    image.bytes_per_line = buffer->window_width * sizeof(uint32);
+    image.bitmap_pad = 4;
     image.bitmap_bit_order = MSBFirst;
     image.format = ZPixmap;
     image.xoffset = 0;
-    image.byte_order = MSBFirst;
+    image.byte_order = LSBFirst;
     image.data = (char *)drawing_buffer;
 
     XPutImage(display, window, context, &image, 0, 0, 0, 0, buffer->window_width, buffer->window_height);
     XFlush(display);
+}
+
+bool32 load_simple_model(char *model_name, Model *model) {
+    FILE *file;
+    if ((file = fopen(model_name, "rb"))) {
+        fseek(file, 0, SEEK_END);
+        size_t file_length = ftell(file);
+        fseek(file, 0, SEEK_SET);
+
+        char *buffer = malloc(file_length + 1);
+        model->vertices = malloc(file_length * sizeof(fVector3));
+        model->indexes = malloc(file_length * sizeof(iVector3));
+
+        ASSERT(buffer || model->vertices || model->indexes);
+        fread(buffer, 1, file_length, file);
+        fclose(file);
+
+        buffer[file_length] = '\0';
+
+        if(!parse_obj(buffer, file_length, model)) {
+            free(buffer);
+            free(model->vertices);
+            free(model->indexes);
+
+            TRACE("Failed to Load model.");
+            return 0;
+        }
+    } else {
+        TRACE("Failed to Open the model file.");
+        return 0;
+    }
+    return 1;
 }
 
 int main(int argc, char **argv) {
@@ -82,22 +116,37 @@ int main(int argc, char **argv) {
                 XColor approx_bg_color, true_bg_color;
 
                 Colormap colormap = DefaultColormap(display, default_screen);
-                if (!XAllocNamedColor(display, colormap, "white", &approx_bg_color, &true_bg_color)) {
+                if (!XAllocNamedColor(display, colormap, "black", &approx_bg_color, &true_bg_color)) {
                     TRACE("Failed to Allocate Color.");
                     BREAK
+                }
+
+                // COLOR FOR WHITE: 0x00FFFFFF
+                // COLOR FOR RED  : 0x00FF0000
+                // COLOR FOR GREEN: 0x0000FF00
+                // COLOR FOR BLUE : 0x000000FF
+                //
+                // actual rendering color:
+                // COLOR FOR BLUE:  0xFF000000
+                // COLOR FOR GREEN: 0x00FF0000
+                // COLOR FOR RED:   0x0000FF00
+
+                Model model = {0};
+                if (!load_simple_model("cube.obj", &model)) {
+                    return 0;
                 }
 
                 XMapWindow(display, my_window);
                 XFlush(display);
 
-                Drawing_Buffer buffer;
+                Drawing_Buffer buffer = {0};
                 buffer.window_width   = window_width;
                 buffer.window_height  = window_height;
                 buffer.depth          = screen_bit_depth;
 
-                buffer.first_buffer   = malloc(window_width * window_height * sizeof(uint32));
-                buffer.second_buffer  = malloc(window_width * window_height * sizeof(uint32));
-                buffer.is_drawing_first = 1;
+                buffer.first_buffer  = malloc(window_width * window_height * sizeof(uint32));
+                buffer.second_buffer = malloc(window_width * window_height * sizeof(uint32));
+                buffer.z_buffer      = malloc(window_width * window_height * sizeof(int32));
 
                 // MEMO: yanked this value from SDL_GetPerformanceFrequency.
                 // SDL_GetPerformanceFrequency returns 1000000000 if you can use CLOCK_MONOTONIC_RAW.
@@ -142,15 +191,11 @@ int main(int argc, char **argv) {
                         }
                     }
 
-                    iVector2 p1 = iVec2(200, 200);
-                    iVector2 p2 = iVec2(480, 600);
-                    iVector2 p3 = iVec2(900, 10);
-                    draw_triangle(&buffer, p1, p2, p3);
+                    Color bg = rgb_opaque(0.0, 0.0, 0.0);
+                    Color c = rgb_opaque(1.0, 1.0, 1.0);
 
-                    p1 = iVec2(80, 40);
-                    p2 = iVec2(100, 200);
-                    p3 = iVec2(300, 40);
-                    draw_triangle(&buffer, p1, p2, p3);
+                    clear_buffer(&buffer, bg);
+                    draw_model(&buffer, &model, c);
 
                     update_xwindow_with_drawbuffer(display, my_window, context, &approx_bg_color, &buffer);
                     swap_buffer(&buffer);
@@ -166,7 +211,7 @@ int main(int argc, char **argv) {
                     real64 ms_per_frame = (1000.0f * (real64)time_elapsed) / (real64)time_frequency;
                     real64 fps = (real64)time_frequency / (real64)time_elapsed;
 
-                    start_time = end_time;
+                    start_time  = end_time;
                     start_cycle = end_cycle;
                     TRACE("MpF: %lf MpF, FPS: %lf, Cycle: %lu \n", ms_per_frame, fps, cycle_elapsed);
                 }

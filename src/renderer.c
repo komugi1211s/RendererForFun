@@ -5,14 +5,15 @@
 #define _CUR_BUF(buf)     (buf->is_drawing_first ? buf->first_buffer : buf->second_buffer)
 
 uint32 color_to_uint32(Color *color) {
-    uint32 r, g, b, a;
+    uint8 r, g, b, a;
 
     a = (uint8)floor(MATHS_MAX(0.0, MATHS_MIN(color->a, 1.0)) * 255.0);
     r = (uint8)floor(MATHS_MAX(0.0, MATHS_MIN(color->r, 1.0)) * 255.0);
     g = (uint8)floor(MATHS_MAX(0.0, MATHS_MIN(color->g, 1.0)) * 255.0);
     b = (uint8)floor(MATHS_MAX(0.0, MATHS_MIN(color->b, 1.0)) * 255.0);
 
-    return (a << 24 | r << 16 | g << 8 | b);
+    uint32 result = ((a << 24) | (r << 16) | (g << 8) | b);
+    return result;
 }
 
 void swap_buffer(Drawing_Buffer *buffer) {
@@ -22,11 +23,11 @@ void swap_buffer(Drawing_Buffer *buffer) {
 void clear_buffer(Drawing_Buffer *buffer, Color color) {
     uint32 *buf = _CUR_BUF(buffer);
     uint32 total_size = buffer->window_width * buffer->window_height;
-    
-    for (uint32 t = 0; t <= total_size; ++t) {
-        buf[t] = color_to_uint32(&color);
-        buffer->z_buffer[t] = -2147483648;
-    }
+
+    uint32 _color = color_to_uint32(&color);
+    int32  z_buffer_min = -2147483648;
+    memset(buf, _color, total_size);
+    memset(buffer->z_buffer, z_buffer_min, total_size);
 }
 
 void draw_line(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, Color color) {
@@ -93,48 +94,45 @@ void draw_bounding_box(Drawing_Buffer *buffer, BoundingBox box, Color color) {
 
 }
 
-void _barycentric_containment_detection(Drawing_Buffer *buffer, iVector2 A, 
+void _barycentric_containment_detection(Drawing_Buffer *buffer, iVector2 A,
                                         iVector2       B,       iVector2 C,
                                         Color color)
 {
     uint32 *buf = _CUR_BUF(buffer);
     BoundingBox bd_box = BB_iV2_Triangle(A, B, C);
-
-    iVector2 AB = iVec2(B.x - A.x, B.y - A.y);
-    iVector2 AC = iVec2(C.x - A.x, C.y - A.y);
-
     uint32 c = color_to_uint32(&color);
+    iVector2 AB, AC, PA;
+    // 最適化用に iVec2 は使わない（使うと鬼のように遅くなる）
+    AB.x = B.x - A.x;
+    AB.y = B.y - A.y;
+    AC.x = C.x - A.x;
+    AC.y = C.y - A.y;
 
-    for(int32 y = bd_box.min_v.y; y < bd_box.max_v.y; ++y) {
-        // [ABy, ACy, PAy]を作る
-        fVector3 cross_y = fVec3((real32)AB.y, (real32)AC.y, (real32)(A.y - y));
+    real32 det_T = (real32)((AB.x * AC.y) - (AC.x * AB.y));
+    bool32 triangle_is_degenerate = fabsf(det_T) < 1;
 
-        for(int32 x = bd_box.min_v.x; x < bd_box.max_v.x; ++x) {
-            // [ABx, ACx, PAx]を作る
-            fVector3 cross_x = fVec3((real32)AB.x, (real32)AC.x, (real32)(A.x - x));
 
-            // [AB, AC, PA] x, y と垂直なベクター[u, v, 1]を得る.
-            // この際 uv.z は 本来3Dのベクターが得るはずの面積を指し示すので、
-            // これでx, y, zを割って正規化する
-            fVector3 uv = fcross_fv3(cross_x, cross_y);
+    if (!triangle_is_degenerate) {
+        for(int32 y = bd_box.min_v.y; y < bd_box.max_v.y; ++y) {
+            PA.y = y - A.y;
 
-            // ここに正の整数が入っていない場合、
-            // 線が重なっている もしくは 肝心の方向が逆になっている場合がある( AxB ~= BxA )
-            // 完全に拒絶
-            if (abs(uv.z) < 1) {
-                goto skipped_the_entire_loop;
+            for(int32 x = bd_box.min_v.x; x < bd_box.max_v.x; ++x) {
+                // NOTE(fuzzy):
+                // 参考: https://shikihuiku.wordpress.com/2017/05/23/barycentric-coordinates%E3%81%AE%E8%A8%88%E7%AE%97%E3%81%A8perspective-correction-partial-derivative%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6/ 
+                PA.x = x - A.x;
+                real32 gamma1, gamma2, gamma3;
+
+                gamma1 = (real32)((PA.x * AC.y) - (PA.y * AC.x)) / det_T;
+                gamma2 = (real32)((AB.x * PA.y) - (AB.y * PA.x)) / det_T;
+                gamma3 = 1.f - gamma1 - gamma2;
+
+                // xA + yB + (1-x-y)C = P' なので x+y+(1-x-y) = 1 とならなければならず
+                // どれか1つの点が負数の場合三角形の外に点があることになる
+                if (gamma1 < 0 || gamma2 < 0 || gamma3 < 0) continue;
+                buf[(y * buffer->window_width) + x] = c;
             }
-
-            // 正規化
-            uv.x /= uv.z;
-            uv.y /= uv.z;
-
-            if ((1.f - uv.x - uv.y) < 0 || uv.x < 0 || uv.y < 0) continue;
-            buf[(y * buffer->window_width) + x] = c;
         }
     }
-
-skipped_the_entire_loop:
     draw_line(buffer, A.x, A.y, B.x, B.y, color);
     draw_line(buffer, A.x, A.y, C.x, C.y, color);
     draw_line(buffer, B.x, B.y, C.x, C.y, color);
@@ -190,7 +188,6 @@ void draw_triangle_wireframe(Drawing_Buffer *buffer, iVector2 A, iVector2 B, iVe
 
 void draw_model(Drawing_Buffer *buffer, Model *model, Color color) {
     ModelVertex vertex;
-    real32 max_value_for_teapot = 3.0;
 
     fVector3 light_pos = fVec3(0.0, 0.0, -10.0);
     for (size_t i = 0; i < model->num_indexes; ++i) {
@@ -200,7 +197,8 @@ void draw_model(Drawing_Buffer *buffer, Model *model, Color color) {
             AB = fsub_fv3(vertex[1], vertex[0]);
             AC = fsub_fv3(vertex[2], vertex[0]);
 
-            fVector3 surface_normal = fnormalize_fv3(fcross_fv3(AC, AB));
+
+            fVector3 surface_normal = fnormalize_fv3(fcross_fv3_simd(AC, AB));
             fVector3 light_normal   = fnormalize_fv3(light_pos);
             real32 color_intensity = fdot_fv3(light_normal, surface_normal);
 
@@ -228,7 +226,6 @@ void draw_model(Drawing_Buffer *buffer, Model *model, Color color) {
 
 void draw_model_wireframe(Drawing_Buffer *buffer, Model *model, Color color) {
     ModelVertex vertex;
-    real32 max_value_for_teapot = 3.0;
 
     for (size_t i = 0; i < model->num_indexes; ++i) {
         if (load_model_vertices(model, i, vertex)) {

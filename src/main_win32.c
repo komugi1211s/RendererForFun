@@ -94,9 +94,9 @@ bool32 load_simple_model(char *model_name, Model *model) {
 
         char *buffer =
             VirtualAlloc(0, file_length, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-        model->vertices = 
+        model->vertices =
             VirtualAlloc(0, file_length * sizeof(fVector3), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-        model->indexes = 
+        model->indexes =
             VirtualAlloc(0, file_length * sizeof(iVector3), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
         ASSERT(buffer || model->vertices || model->indexes);
@@ -119,7 +119,7 @@ bool32 load_simple_model(char *model_name, Model *model) {
     return 1;
 }
 
-int32 WINAPI 
+int32 WINAPI
 WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolete) {
     int32 window_width = 1600;
     int32 window_height = 900;
@@ -145,7 +145,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
         if (window) {
             bitmap_info.bmiHeader.biSize = sizeof(bitmap_info.bmiHeader);
             bitmap_info.bmiHeader.biWidth = window_width;
-            
+
             // NOTE(fuzzy):
             // 現状はY軸の扱いを通常通りとする（Yが大きいほど上に行く）
             // -window_height とすれば上下逆になるが、他の箇所で計算しないといけないので
@@ -178,7 +178,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
 
             ASSERT(drawing_buffer.first_buffer && drawing_buffer.second_buffer);
             MSG message;
-            
+
             while(running) {
                 while(PeekMessage(&message, window, 0, 0, PM_REMOVE)) {
                     TranslateMessage(&message);
