@@ -146,7 +146,7 @@ int main(int argc, char **argv) {
 
                 buffer.first_buffer  = malloc(window_width * window_height * sizeof(uint32));
                 buffer.second_buffer = malloc(window_width * window_height * sizeof(uint32));
-                buffer.z_buffer      = malloc(window_width * window_height * sizeof(int32));
+                buffer.z_buffer      = malloc(window_width * window_height * sizeof(real32));
 
                 // MEMO: yanked this value from SDL_GetPerformanceFrequency.
                 // SDL_GetPerformanceFrequency returns 1000000000 if you can use CLOCK_MONOTONIC_RAW.

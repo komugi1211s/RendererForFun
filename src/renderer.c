@@ -2,8 +2,10 @@
 #include "renderer.h"
 
 #define USE_LINE_SWEEPING 0
-#define _CUR_BUF(buf)     (buf->is_drawing_first ? buf->first_buffer : buf->second_buffer)
+#define _CUR_BUF(buf)     (buf->is_drawing_first ? buf->second_buffer : buf->first_buffer)
 
+
+// TODO(fuzzy): BGRA系統だと動かない
 uint32 color_to_uint32(Color *color) {
     uint8 r, g, b, a;
 
@@ -25,7 +27,7 @@ void clear_buffer(Drawing_Buffer *buffer, Color color) {
     uint32 total_size = buffer->window_width * buffer->window_height;
 
     uint32 _color = color_to_uint32(&color);
-    int32  z_buffer_min = -2147483648;
+    real32 z_buffer_min = -1.175494351e-38f;
     memset(buf, _color, total_size);
     memset(buffer->z_buffer, z_buffer_min, total_size);
 }
@@ -77,10 +79,10 @@ void draw_line(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, C
             buf[(y * buffer->window_width) + x] = c;
         }
     }
-
 }
 
-void draw_bounding_box(Drawing_Buffer *buffer, BoundingBox box, Color color) {
+internal inline void
+draw_bounding_box(Drawing_Buffer *buffer, BoundingBoxi2 box, Color color) {
 
     // from top left, goes right / bottom side
     draw_line(buffer, box.min_v.x, box.min_v.y, box.min_v.x, box.max_v.y, color);
@@ -94,48 +96,57 @@ void draw_bounding_box(Drawing_Buffer *buffer, BoundingBox box, Color color) {
 
 }
 
-void _barycentric_containment_detection(Drawing_Buffer *buffer, iVector2 A,
-                                        iVector2       B,       iVector2 C,
-                                        Color color)
+// NOTE(fuzzy):
+// 参考: https://shikihuiku.wordpress.com/2017/05/23/barycentric-coordinates%E3%81%AE%E8%A8%88%E7%AE%97%E3%81%A8perspective-correction-partial-derivative%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6/ 
+internal void
+barycentric_drawing(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3 C, Color color)
 {
     uint32 *buf = _CUR_BUF(buffer);
-    BoundingBox bd_box = BB_iV2_Triangle(A, B, C);
+    BoundingBoxf3 bd_box = BB_fV3(A, B, C);
     uint32 c = color_to_uint32(&color);
-    iVector2 AB, AC, PA;
+    fVector3 AB, AC, PA;
+
     // 最適化用に iVec2 は使わない（使うと鬼のように遅くなる）
     AB.x = B.x - A.x;
     AB.y = B.y - A.y;
     AC.x = C.x - A.x;
     AC.y = C.y - A.y;
 
-    real32 det_T = (real32)((AB.x * AC.y) - (AC.x * AB.y));
+    real32 det_T = AB.x * AC.y - AC.x * AB.y;
     bool32 triangle_is_degenerate = fabsf(det_T) < 1;
 
-
+    
     if (!triangle_is_degenerate) {
-        for(int32 y = bd_box.min_v.y; y < bd_box.max_v.y; ++y) {
+        int32 y_min = (int32)floor(bd_box.min_v.y);
+        int32 y_max = (int32)ceil(bd_box.max_v.y);
+
+        int32 x_min = (int32)floor(bd_box.min_v.x);
+        int32 x_max = (int32)ceil(bd_box.max_v.x);
+
+        for(int32 y = y_min; y < y_max; ++y) {
             PA.y = y - A.y;
 
-            for(int32 x = bd_box.min_v.x; x < bd_box.max_v.x; ++x) {
-                // NOTE(fuzzy):
-                // 参考: https://shikihuiku.wordpress.com/2017/05/23/barycentric-coordinates%E3%81%AE%E8%A8%88%E7%AE%97%E3%81%A8perspective-correction-partial-derivative%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6/ 
+            for(int32 x = x_min; x < x_max; ++x) {
                 PA.x = x - A.x;
                 real32 gamma1, gamma2, gamma3;
 
-                gamma1 = (real32)((PA.x * AC.y) - (PA.y * AC.x)) / det_T;
-                gamma2 = (real32)((AB.x * PA.y) - (AB.y * PA.x)) / det_T;
+                gamma1 = (real32)(PA.x * AC.y - PA.y * AC.x) / det_T;
+                gamma2 = (real32)(AB.x * PA.y - AB.y * PA.x) / det_T;
                 gamma3 = 1.f - gamma1 - gamma2;
 
                 // xA + yB + (1-x-y)C = P' なので x+y+(1-x-y) = 1 とならなければならず
                 // どれか1つの点が負数の場合三角形の外に点があることになる
                 if (gamma1 < 0 || gamma2 < 0 || gamma3 < 0) continue;
-                buf[(y * buffer->window_width) + x] = c;
+
+                real32 z_value = (A.z * gamma1) + (B.z * gamma2) + (C.z * gamma3);
+                int32 position = (y * buffer->window_width) + x;
+                if (buffer->z_buffer[position] < z_value) {
+                    buffer->z_buffer[position] = z_value;
+                    buf[position] = c;
+                }
             }
         }
     }
-    draw_line(buffer, A.x, A.y, B.x, B.y, color);
-    draw_line(buffer, A.x, A.y, C.x, C.y, color);
-    draw_line(buffer, B.x, B.y, C.x, C.y, color);
 }
 
 void _line_sweeping(Drawing_Buffer *buffer, iVector2 y_sm, iVector2 y_md, iVector2 y_bg, Color color) {
@@ -152,7 +163,6 @@ void _line_sweeping(Drawing_Buffer *buffer, iVector2 y_sm, iVector2 y_md, iVecto
     real32 bottom_half_distance = (y_bg.y - y_md.y);
 
     int32 x0, x1;
-
     int32 y = y_sm.y;
 
     for (; y < y_md.y; ++y) {
@@ -175,9 +185,10 @@ void _line_sweeping(Drawing_Buffer *buffer, iVector2 y_sm, iVector2 y_md, iVecto
     }
 }
 
-void draw_triangle(Drawing_Buffer *buffer, iVector2 y_sm, iVector2 y_md, iVector2 y_bg, Color color) {
-    if (USE_LINE_SWEEPING) _line_sweeping(buffer, y_sm, y_md, y_bg, color);
-    else                   _barycentric_containment_detection(buffer, y_sm, y_md, y_bg, color);
+void draw_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3 C, Color color) {
+    // if (USE_LINE_SWEEPING) _line_sweeping(buffer, y_sm, y_md, y_bg, color);
+    
+    barycentric_drawing(buffer, A, B, C, color);
 }
 
 void draw_triangle_wireframe(Drawing_Buffer *buffer, iVector2 A, iVector2 B, iVector2 C, Color color) {
@@ -186,17 +197,29 @@ void draw_triangle_wireframe(Drawing_Buffer *buffer, iVector2 A, iVector2 B, iVe
     draw_line(buffer, B.x, B.y, C.x, C.y, color);
 }
 
+// I think I can do simd???
+void turn_vertex_into_screen_space(ModelVertex world_space,
+                                   int32 window_width, int32 window_height)
+{
+    world_space[0].x = ((1.0 + world_space[0].x) * (window_width - 1)  / 2);
+    world_space[0].y = ((1.0 + world_space[0].y) * (window_height - 1)  / 2);
+
+    world_space[1].x = ((1.0 + world_space[1].x) * (window_width - 1)  / 2);
+    world_space[1].y = ((1.0 + world_space[1].y) * (window_height - 1)  / 2);
+
+    world_space[2].x = ((1.0 + world_space[2].x) * (window_width - 1)  / 2);
+    world_space[2].y = ((1.0 + world_space[2].y) * (window_height - 1)  / 2);
+}
+
 void draw_model(Drawing_Buffer *buffer, Model *model, Color color) {
-    ModelVertex vertex;
+    ModelVertex vertex; // typedef to fVector3[3]
 
     fVector3 light_pos = fVec3(0.0, 0.0, -10.0);
     for (size_t i = 0; i < model->num_indexes; ++i) {
         if (load_model_vertices(model, i, vertex)) {
-            iVector2 one, two, three;
             fVector3 AB, AC;
             AB = fsub_fv3(vertex[1], vertex[0]);
             AC = fsub_fv3(vertex[2], vertex[0]);
-
 
             fVector3 surface_normal = fnormalize_fv3(fcross_fv3_simd(AC, AB));
             fVector3 light_normal   = fnormalize_fv3(light_pos);
@@ -210,16 +233,8 @@ void draw_model(Drawing_Buffer *buffer, Model *model, Color color) {
             new_color.b = color.b * color_intensity;
             new_color.a = color.a * color_intensity;
 
-            one.x   = (int32)((1.0 + vertex[0].x) * (buffer->window_width - 1)  / 2);
-            one.y   = (int32)((1.0 + vertex[0].y) * (buffer->window_height - 1) / 2);
-
-            two.x   = (int32)((1.0 + vertex[1].x) * (buffer->window_width - 1)  / 2);
-            two.y   = (int32)((1.0 + vertex[1].y) * (buffer->window_height - 1) / 2);
-
-            three.x = (int32)((1.0 + vertex[2].x) * (buffer->window_width - 1)  / 2);
-            three.y = (int32)((1.0 + vertex[2].y) * (buffer->window_height - 1) / 2);
-
-            draw_triangle(buffer, one, two, three, new_color);
+            turn_vertex_into_screen_space(vertex, buffer->window_width, buffer->window_height);
+            draw_triangle(buffer, vertex[0], vertex[1], vertex[2], new_color);
         }
     }
 }

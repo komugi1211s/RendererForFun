@@ -2,3 +2,4 @@
 /.vs
 gmon.out
 *.rdbg
+/profile

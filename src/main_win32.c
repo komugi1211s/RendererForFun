@@ -172,12 +172,22 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             drawing_buffer.second_buffer =
                 VirtualAlloc(0, buffer_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
-            size z_buffer_size = window_height * window_width * sizeof(int32);
+            size z_buffer_size = window_height * window_width * sizeof(real32);
             drawing_buffer.z_buffer =
                 VirtualAlloc(0, z_buffer_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
             ASSERT(drawing_buffer.first_buffer && drawing_buffer.second_buffer);
             MSG message;
+
+            LARGE_INTEGER freq;
+            QueryPerformanceFrequency(&freq);
+            uint64 time_frequency = freq.QuadPart;
+
+            LARGE_INTEGER start_time, end_time;
+            QueryPerformanceCounter(&start_time);
+
+            uint64 start_cycle, end_cycle;
+            start_cycle = __rdtsc();
 
             while(running) {
                 while(PeekMessage(&message, window, 0, 0, PM_REMOVE)) {
@@ -192,12 +202,19 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
                 Color color = rgb_opaque(1.0, 1.0, 1.0);
                 clear_buffer(&drawing_buffer, bg);
                 draw_model(&drawing_buffer, &model, color);
-
-
                 render_buffer(context, &client_rect);
                 swap_buffer(&drawing_buffer);
-
                 ReleaseDC(window, context);
+
+                QueryPerformanceCounter(&end_time);
+                end_cycle = __rdtsc();
+                uint64 time_elapsed  = end_time.QuadPart - start_time.QuadPart;
+                uint64 cycle_elapsed = end_cycle - start_cycle;
+                real64 ms_per_frame = (1000.0f * (real64)time_elapsed) / (real64)time_frequency;
+                real64 fps = (real64)time_frequency / (real64)time_elapsed;
+                start_time  = end_time;
+                start_cycle = end_cycle;
+                TRACE("MpF: %lf MpF, FPS: %lf, Cycle: %llu \n", ms_per_frame, fps, cycle_elapsed);
             }
 
             VirtualFree(drawing_buffer.first_buffer, 0, MEM_RELEASE);

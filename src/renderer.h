@@ -13,7 +13,7 @@ typedef struct Drawing_Buffer {
 
     uint32 *first_buffer;
     uint32 *second_buffer;
-    int32  *z_buffer;
+    real32 *z_buffer;
 
 } Drawing_Buffer;
 
@@ -40,8 +40,7 @@ void clear_buffer(Drawing_Buffer *buffer, Color color);
 uint32 color_to_uint32(Color *color);
 
 void draw_line(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, Color color);
-void draw_bounding_box(Drawing_Buffer *buffer, BoundingBox box, Color color);
-void draw_triangle(Drawing_Buffer *buffer, iVector2 y_sm, iVector2 y_md, iVector2 y_bg, Color color);
+void draw_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3 C, Color color);
 
 void draw_model(Drawing_Buffer *buffer, Model *model, Color color);
 
