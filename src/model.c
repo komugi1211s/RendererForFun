@@ -20,9 +20,9 @@
 // if it does not work, well then good luck.
 
 bool32 load_model_vertices(Model *model, size_t triangle_index, ModelVertex out) {
-    if (model->num_indexes < (triangle_index - 1))  return 0;
+    if (model->num_vert_idx < (triangle_index - 1))  return 0;
 
-    iVector3 indexes = model->indexes[triangle_index];
+    iVector3 indexes = model->vert_idx[triangle_index];
     if ((indexes.x - 1) > model->num_vertices) return 0;
     if ((indexes.y - 1) > model->num_vertices) return 0;
     if ((indexes.z - 1) > model->num_vertices) return 0;
@@ -38,7 +38,7 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
     uint32 current_line = 0;
 
     model->num_vertices = 0;
-    model->num_indexes  = 0;
+    model->num_vert_idx  = 0;
 
     size_t maximum_idx = obj_file_length - 1;
     while(*obj_file) {
@@ -132,7 +132,7 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
             case 'f':
             {
                 obj_file++;
-                ASSERT(model->num_indexes < maximum_idx);
+                ASSERT(model->num_vert_idx < maximum_idx);
                 char *skipped;
                 iVector3 result;
 
@@ -166,7 +166,7 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
                 }
                 obj_file = skipped;
 
-                model->indexes[model->num_indexes++] = result;
+                model->vert_idx[model->num_vert_idx++] = result;
             } break;
 
             default:

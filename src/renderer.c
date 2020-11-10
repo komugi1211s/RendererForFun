@@ -4,7 +4,6 @@
 #define USE_LINE_SWEEPING 0
 #define _CUR_BUF(buf)     (buf->is_drawing_first ? buf->second_buffer : buf->first_buffer)
 
-
 // TODO(fuzzy): BGRA系統だと動かない
 uint32 color_to_uint32(Color *color) {
     uint8 r, g, b, a;
@@ -28,8 +27,12 @@ void clear_buffer(Drawing_Buffer *buffer, Color color) {
 
     uint32 _color = color_to_uint32(&color);
     real32 z_buffer_min = -1.175494351e-38f;
-    memset(buf, _color, total_size);
-    memset(buffer->z_buffer, z_buffer_min, total_size);
+    for (int32 i = 0; i < total_size; ++i) {
+        buf[i] = _color;
+    }
+    for (int32 i = 0; i < total_size; ++i) {
+        buffer->z_buffer[i] = z_buffer_min;
+    }
 }
 
 void draw_line(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, Color color) {
@@ -97,10 +100,11 @@ draw_bounding_box(Drawing_Buffer *buffer, BoundingBoxi2 box, Color color) {
 }
 
 // NOTE(fuzzy):
-// 参考: https://shikihuiku.wordpress.com/2017/05/23/barycentric-coordinates%E3%81%AE%E8%A8%88%E7%AE%97%E3%81%A8perspective-correction-partial-derivative%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6/ 
+// 参考: https://shikihuiku.wordpress.com/2017/05/23/barycentric-coordinates%E3%81%AE%E8%A8%88%E7%AE%97%E3%81%A8perspective-correction-partial-derivative%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6/
 internal void
 barycentric_drawing(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3 C, Color color)
 {
+    PROFILE_FUNC_START;
     uint32 *buf = _CUR_BUF(buffer);
     BoundingBoxf3 bd_box = BB_fV3(A, B, C);
     uint32 c = color_to_uint32(&color);
@@ -115,30 +119,29 @@ barycentric_drawing(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3 C, 
     real32 det_T = AB.x * AC.y - AC.x * AB.y;
     bool32 triangle_is_degenerate = fabsf(det_T) < 1;
 
-    
     if (!triangle_is_degenerate) {
         int32 y_min = (int32)floor(bd_box.min_v.y);
         int32 y_max = (int32)ceil(bd_box.max_v.y);
-
         int32 x_min = (int32)floor(bd_box.min_v.x);
         int32 x_max = (int32)ceil(bd_box.max_v.x);
 
         for(int32 y = y_min; y < y_max; ++y) {
             PA.y = y - A.y;
-
             for(int32 x = x_min; x < x_max; ++x) {
                 PA.x = x - A.x;
                 real32 gamma1, gamma2, gamma3;
 
-                gamma1 = (real32)(PA.x * AC.y - PA.y * AC.x) / det_T;
-                gamma2 = (real32)(AB.x * PA.y - AB.y * PA.x) / det_T;
+                gamma1 = (PA.x * AC.y - PA.y * AC.x) / det_T;
+                gamma2 = (AB.x * PA.y - AB.y * PA.x) / det_T;
                 gamma3 = 1.f - gamma1 - gamma2;
 
-                // xA + yB + (1-x-y)C = P' なので x+y+(1-x-y) = 1 とならなければならず
+                // (1 - x - y)A + xB + yC = P' なので x+y+(1-x-y) = 1 とならなければならず
                 // どれか1つの点が負数の場合三角形の外に点があることになる
                 if (gamma1 < 0 || gamma2 < 0 || gamma3 < 0) continue;
 
-                real32 z_value = (A.z * gamma1) + (B.z * gamma2) + (C.z * gamma3);
+                // (1 - x - y)A + xB + yC として定義してあるので
+                // 掛け算もそれに合わせて揃えないといけない
+                real32 z_value = (A.z * gamma3) + (B.z * gamma1) + (C.z * gamma2);
                 int32 position = (y * buffer->window_width) + x;
                 if (buffer->z_buffer[position] < z_value) {
                     buffer->z_buffer[position] = z_value;
@@ -147,6 +150,7 @@ barycentric_drawing(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3 C, 
             }
         }
     }
+    PROFILE_FUNC_END;
 }
 
 void _line_sweeping(Drawing_Buffer *buffer, iVector2 y_sm, iVector2 y_md, iVector2 y_bg, Color color) {
@@ -187,7 +191,7 @@ void _line_sweeping(Drawing_Buffer *buffer, iVector2 y_sm, iVector2 y_md, iVecto
 
 void draw_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3 C, Color color) {
     // if (USE_LINE_SWEEPING) _line_sweeping(buffer, y_sm, y_md, y_bg, color);
-    
+
     barycentric_drawing(buffer, A, B, C, color);
 }
 
@@ -212,18 +216,23 @@ void turn_vertex_into_screen_space(ModelVertex world_space,
 }
 
 void draw_model(Drawing_Buffer *buffer, Model *model, Color color) {
+    PROFILE_FUNC_START;
     ModelVertex vertex; // typedef to fVector3[3]
-
     fVector3 light_pos = fVec3(0.0, 0.0, -10.0);
-    for (size_t i = 0; i < model->num_indexes; ++i) {
+    fVector3 AB, AC;
+    fVector3 surface_normal, light_normal;
+    real32 color_intensity;
+
+    for (size_t i = 0; i < model->num_vert_idx; ++i) {
         if (load_model_vertices(model, i, vertex)) {
-            fVector3 AB, AC;
             AB = fsub_fv3(vertex[1], vertex[0]);
             AC = fsub_fv3(vertex[2], vertex[0]);
 
-            fVector3 surface_normal = fnormalize_fv3(fcross_fv3_simd(AC, AB));
-            fVector3 light_normal   = fnormalize_fv3(light_pos);
-            real32 color_intensity = fdot_fv3(light_normal, surface_normal);
+            PROFILE("calculate light direction") {
+                surface_normal = fnormalize_fv3(fcross_fv3_simd(AC, AB));
+                light_normal   = fnormalize_fv3(light_pos);
+                color_intensity = fdot_fv3(light_normal, surface_normal);
+            }
 
             if (color_intensity < 0) continue;
 
@@ -237,12 +246,13 @@ void draw_model(Drawing_Buffer *buffer, Model *model, Color color) {
             draw_triangle(buffer, vertex[0], vertex[1], vertex[2], new_color);
         }
     }
+    PROFILE_FUNC_END;
 }
 
 void draw_model_wireframe(Drawing_Buffer *buffer, Model *model, Color color) {
     ModelVertex vertex;
 
-    for (size_t i = 0; i < model->num_indexes; ++i) {
+    for (size_t i = 0; i < model->num_vert_idx; ++i) {
         if (load_model_vertices(model, i, vertex)) {
             iVector2 one, two, three;
 
@@ -266,3 +276,65 @@ void draw_model_wireframe(Drawing_Buffer *buffer, Model *model, Color color) {
         }
     }
 }
+
+
+typedef struct DEBUGCharacterBitmap {
+    uint8 *allocated;
+    int32 width, height, x_off, y_off;
+} DEBUGCharacterBitmap;
+
+#define BITMAP_ARRAY_SIZE 1024
+global_variable DEBUGCharacterBitmap bitmap_array[BITMAP_ARRAY_SIZE] = {0}; // THIS IS TOO STUPID
+
+void draw_text(Drawing_Buffer *buffer, FontData *font, int32 start_x, int32 start_y, char *text) {
+
+    int32 x = start_x;
+    int32 y = start_y;
+    uint32 *buf = _CUR_BUF(buffer);
+
+    for (char *t = text; *t; ++t) {
+        if (*t == '\n') {
+            y += (font->base_line + font->line_gap);
+            continue;
+        }
+        char character = *t;
+        int32 advance, lsb, x0, x1, y0, y1;
+        stbtt_GetCodepointHMetrics(&font->font_info, character, &advance, &lsb);
+        stbtt_GetCodepointBitmapBox(&font->font_info, character, font->char_scale, font->char_scale,
+                                    &x0, &y0, &x1, &y1);
+
+        DEBUGCharacterBitmap *bitmap;
+        if (!bitmap_array[character].allocated) {
+            printf("Creating bitmap for :%c\n", character);
+
+            DEBUGCharacterBitmap bitmap;
+            bitmap.allocated = stbtt_GetCodepointBitmap(&font->font_info, font->char_scale, font->char_scale,
+                                                         character, &bitmap.width, &bitmap.height, &bitmap.x_off, &bitmap.y_off);
+            if (bitmap.allocated) {
+                bitmap_array[character] = bitmap;
+            } else {
+                bitmap_array[character].allocated = (uint8 *)0xFFFFFFFFFFFFFFF;
+                bitmap_array[character].width = -1;
+                bitmap_array[character].height = -1;
+            }
+        }
+        bitmap = &bitmap_array[character];
+
+        x += (advance + lsb) * font->char_scale;
+        int32 position = (x + (y + y0) * buffer->window_width);
+
+        if (bitmap->width < 0) continue;
+        for (int i = 0; i < bitmap->height; ++i) {
+            for (int j = 0; j < bitmap->width; ++j) {
+                if (bitmap->allocated[j + (i * bitmap->width)] > 0) {
+                    uint8 color = bitmap->allocated[j + (i * bitmap->width)];
+                    buf[position + (j + (i * buffer->window_width))] = (color << 16 | color << 8 | color);
+                }
+            }
+        }
+    }
+
+}
+
+
+

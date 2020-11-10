@@ -1,6 +1,5 @@
 #ifndef K_GENERAL_
 #define K_GENERAL_
-
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>

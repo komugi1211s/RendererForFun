@@ -44,4 +44,18 @@ void draw_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3 C, C
 
 void draw_model(Drawing_Buffer *buffer, Model *model, Color color);
 
-#endif
+#ifdef STB_TRUETYPE_IMPLEMENTATION
+
+typedef struct FontData {
+    stbtt_fontinfo font_info;
+    int32          ascent;
+    int32          descent;
+    int32          line_gap;
+    int32          base_line;
+    real32         char_scale;
+} FontData;
+
+void draw_text(Drawing_Buffer *buffer, FontData *font_data, int32 x, int32 y, char *Text);
+
+#endif // STB_TRUETYPE_IMPLEMENTATION
+#endif // _K_RENDERER_H

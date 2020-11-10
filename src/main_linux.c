@@ -5,8 +5,14 @@
 #include <math.h>
 #include <time.h>
 
-#include "general.h"
+#define STB_TRUETYPE_IMPLEMENTATION
+#define STB_IMAGE_IMPLEMENTATION
+#define STBTT_STATIC
 
+#include "general.h"
+#include "3rdparty.h"
+
+#include "profile.c"
 #include "maths.c"
 #include "model.c"
 #include "renderer.c"
@@ -35,6 +41,20 @@ void update_xwindow_with_drawbuffer(Display *display, Window window, GC context,
     XFlush(display);
 }
 
+global_variable uint8 ttf_buffer[1 << 25];
+bool32 load_simple_font(char *font_name, stbtt_fontinfo *font_info) {
+    FILE *font = NULL;
+    if ((font = fopen(font_name, "rb"))) {
+        fread(ttf_buffer, 1, 1 << 25, font);
+        fclose(font);
+
+        stbtt_InitFont(font_info, ttf_buffer, 0);
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 bool32 load_simple_model(char *model_name, Model *model) {
     FILE *file;
     if ((file = fopen(model_name, "rb"))) {
@@ -42,11 +62,11 @@ bool32 load_simple_model(char *model_name, Model *model) {
         size_t file_length = ftell(file);
         fseek(file, 0, SEEK_SET);
 
-        char *buffer = malloc(file_length + 1);
+        char *buffer    = malloc(file_length + 1);
         model->vertices = malloc(file_length * sizeof(fVector3));
-        model->indexes = malloc(file_length * sizeof(iVector3));
+        model->vert_idx = malloc(file_length * sizeof(iVector3));
 
-        ASSERT(buffer || model->vertices || model->indexes);
+        ASSERT(buffer || model->vertices || model->vert_idx);
         fread(buffer, 1, file_length, file);
         fclose(file);
 
@@ -55,7 +75,7 @@ bool32 load_simple_model(char *model_name, Model *model) {
         if(!parse_obj(buffer, file_length, model)) {
             free(buffer);
             free(model->vertices);
-            free(model->indexes);
+            free(model->vert_idx);
 
             TRACE("Failed to Load model.");
             return 0;
@@ -121,18 +141,18 @@ int main(int argc, char **argv) {
                     BREAK
                 }
 
-                // COLOR FOR WHITE: 0x00FFFFFF
-                // COLOR FOR RED  : 0x00FF0000
-                // COLOR FOR GREEN: 0x0000FF00
-                // COLOR FOR BLUE : 0x000000FF
-                //
-                // actual rendering color:
-                // COLOR FOR BLUE:  0xFF000000
-                // COLOR FOR GREEN: 0x00FF0000
-                // COLOR FOR RED:   0x0000FF00
+                FontData font_data = {0};
+                if (!load_simple_font("inconsolata.ttf", &font_data.font_info)) {
+                    TRACE("STB FONT LOAD FAILED.");
+                    return 0;
+                }
+
+                font_data.char_scale = stbtt_ScaleForPixelHeight(&font_data.font_info, window_height / 40);
+                stbtt_GetFontVMetrics(&font_data.font_info, &font_data.ascent, &font_data.descent, &font_data.line_gap);
+                font_data.base_line = font_data.ascent * font_data.char_scale;
 
                 Model model = {0};
-                if (!load_simple_model("cube.obj", &model)) {
+                if (!load_simple_model("african_head.obj", &model)) {
                     return 0;
                 }
 
@@ -159,6 +179,9 @@ int main(int argc, char **argv) {
                 start_cycle = __rdtsc();
 
                 bool32 running = 1;
+
+                size_t string_message_temp_buffer_size = 1024;
+                char string_message_temp_buffer[1024] = {0};
                 while (running) {
                     clock_gettime(CLOCK_MONOTONIC_RAW, &_timespec_now);
                     start_time = (_timespec_now.tv_sec * time_frequency) + _timespec_now.tv_nsec;
@@ -197,8 +220,17 @@ int main(int argc, char **argv) {
                     clear_buffer(&buffer, bg);
                     draw_model(&buffer, &model, c);
 
-                    update_xwindow_with_drawbuffer(display, my_window, context, &approx_bg_color, &buffer);
-                    swap_buffer(&buffer);
+                    for (int32 i = 0; i < profile_info_count; ++i) {
+                        if (!profile_info[i].is_started) {
+                            memset(string_message_temp_buffer, 0,
+                                    string_message_temp_buffer_size);
+
+                            snprintf(string_message_temp_buffer,
+                                    string_message_temp_buffer_size,
+                                    "[%d] Name: %s, Cycle: %10lu", i, profile_info[i].name, profile_info[i].cycle_elapsed);
+                            draw_text(&buffer, &font_data, 10, 40 + (20 * i), string_message_temp_buffer);
+                        }
+                    }
 
                     // NOTE(fuzzy): Lofted this from Handmade Hero.
                     clock_gettime(CLOCK_MONOTONIC_RAW, &_timespec_now);
@@ -211,9 +243,18 @@ int main(int argc, char **argv) {
                     real64 ms_per_frame = (1000.0f * (real64)time_elapsed) / (real64)time_frequency;
                     real64 fps = (real64)time_frequency / (real64)time_elapsed;
 
+                    memset(string_message_temp_buffer, 0,
+                            string_message_temp_buffer_size);
+
+                    snprintf(string_message_temp_buffer,
+                            string_message_temp_buffer_size,
+                            "MpF: %lf MpF, FPS: %lf, Cycle: %lu \n", ms_per_frame, fps, cycle_elapsed);
+                    draw_text(&buffer, &font_data, 10, 20, string_message_temp_buffer);
+                    update_xwindow_with_drawbuffer(display, my_window, context, &approx_bg_color, &buffer);
+                    swap_buffer(&buffer);
+
                     start_time  = end_time;
                     start_cycle = end_cycle;
-                    TRACE("MpF: %lf MpF, FPS: %lf, Cycle: %lu \n", ms_per_frame, fps, cycle_elapsed);
                 }
                 XCloseDisplay(display);
             } else {

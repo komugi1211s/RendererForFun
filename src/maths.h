@@ -23,20 +23,22 @@ typedef struct BoundingBoxi2 {
     iVector2 max_v;
 } BoundingBoxi2;
 
-typedef struct BoundingBox {
+typedef struct BoundingBoxf3 {
     fVector3 min_v;
     fVector3 max_v;
 } BoundingBoxf3;
 
 
-inline iVector2 iVec2(int32 x, int32 y) {
+internal inline iVector2
+iVec2(int32 x, int32 y) {
     iVector2 result = {0};
     result.x = x;
     result.y = y;
     return result;
 }
 
-inline iVector3 iVec3(int32 x, int32 y, int32 z) {
+internal inline iVector3
+iVec3(int32 x, int32 y, int32 z) {
     iVector3 result = {0};
     result.x = x;
     result.y = y;
@@ -45,7 +47,8 @@ inline iVector3 iVec3(int32 x, int32 y, int32 z) {
     return result;
 }
 
-inline fVector3 fVec3(real32 x, real32 y, real32 z) {
+internal inline fVector3
+fVec3(real32 x, real32 y, real32 z) {
     fVector3 result = {0};
     result.x = x;
     result.y = y;
@@ -57,7 +60,8 @@ inline fVector3 fVec3(real32 x, real32 y, real32 z) {
 #define MATHS_MIN(a, b) ((a > b) ? b : a)
 #define MATHS_MAX(a, b) ((a < b) ? b : a)
 
-inline BoundingBoxi2 BB_iV2_Line(iVector2 one, iVector2 two) {
+internal inline BoundingBoxi2
+BB_iV2_Line(iVector2 one, iVector2 two) {
     BoundingBoxi2 box = {0};
 
     box.min_v.x = MATHS_MIN(one.x, two.x);
@@ -69,7 +73,8 @@ inline BoundingBoxi2 BB_iV2_Line(iVector2 one, iVector2 two) {
     return box;
 }
 
-inline BoundingBoxi2 BB_iV2_Triangle(iVector2 one, iVector2 two, iVector2 three) {
+internal inline BoundingBoxi2
+BB_iV2_Triangle(iVector2 one, iVector2 two, iVector2 three) {
     BoundingBoxi2 box = {0};
 
     box.min_v.x = MATHS_MIN(MATHS_MIN(one.x, two.x), three.x);
@@ -80,7 +85,8 @@ inline BoundingBoxi2 BB_iV2_Triangle(iVector2 one, iVector2 two, iVector2 three)
     return box;
 }
 
-inline BoundingBoxf3 BB_fV3(fVector3 one, fVector3 two, fVector3 three) {
+internal inline BoundingBoxf3
+BB_fV3(fVector3 one, fVector3 two, fVector3 three) {
     BoundingBoxf3 box = {0};
 
     box.min_v.x = MATHS_MIN(MATHS_MIN(one.x, two.x), three.x);
@@ -94,17 +100,16 @@ inline BoundingBoxf3 BB_fV3(fVector3 one, fVector3 two, fVector3 three) {
     return box;
 }
 
-fVector3 fnormalize_fv3(fVector3 A);
-real32 fdot_fv3(fVector3 A, fVector3 B);
-real32 fdot_fv3_simd(fVector3 A, fVector3 B);
+internal inline fVector3 fnormalize_fv3(fVector3 A);
+internal inline real32 fdot_fv3(fVector3 A, fVector3 B);
+internal inline real32 fdot_fv3_simd(fVector3 A, fVector3 B);
 
-fVector3 fcross_iv3(iVector3 A, iVector3 B);
+internal inline fVector3 fcross_iv3(iVector3 A, iVector3 B);
+internal inline fVector3 fcross_fv3(fVector3 A, fVector3 B);
+internal inline fVector3 fcross_fv3_simd(fVector3 A, fVector3 B);
 
-fVector3 fcross_fv3(fVector3 A, fVector3 B);
-fVector3 fcross_fv3_simd(fVector3 A, fVector3 B);
-
-iVector3 icross_iv3(iVector3 A, iVector3 B);
-iVector3 isub_iv3(iVector3 A, iVector3 B);
-fVector3 fsub_fv3(fVector3 A, fVector3 B);
+internal inline iVector3 icross_iv3(iVector3 A, iVector3 B);
+internal inline iVector3 isub_iv3(iVector3 A, iVector3 B);
+internal inline fVector3 fsub_fv3(fVector3 A, fVector3 B);
 
 #endif

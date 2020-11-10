@@ -1,6 +1,7 @@
 ﻿#include "maths.h"
 
-fVector3 fcross_iv3(iVector3 A, iVector3 B) {
+internal inline fVector3
+fcross_iv3(iVector3 A, iVector3 B) {
     fVector3 result;
 
     result.x = (real32)((A.y * B.z) - (A.z * B.y));
@@ -10,23 +11,29 @@ fVector3 fcross_iv3(iVector3 A, iVector3 B) {
     return result;
 }
 
-real32 fdot_fv3(fVector3 A, fVector3 B) {
+internal inline real32
+fdot_fv3(fVector3 A, fVector3 B) {
     real32 result = (A.x * B.x) + (A.y * B.y) + (A.z * B.z);
     return result;
 }
 
 fVector3 fnormalize_fv3(fVector3 A) {
     real32 distance = sqrtf((A.x * A.x) + (A.y * A.y) + (A.z * A.z));
-    if (distance == 0) return fVec3(0, 0, 0);
-
-    A.x /= distance;
-    A.y /= distance;
-    A.z /= distance;
+    if (distance == 0) {
+        A.x = 0;
+        A.y = 0;
+        A.z = 0;
+    } else {
+        A.x /= distance;
+        A.y /= distance;
+        A.z /= distance;
+    }
 
     return A;
 }
 
-fVector3 fcross_fv3(fVector3 A, fVector3 B) {
+internal inline fVector3
+fcross_fv3(fVector3 A, fVector3 B) {
     fVector3 result;
 
     result.x = (A.y * B.z) - (A.z * B.y);
@@ -37,7 +44,8 @@ fVector3 fcross_fv3(fVector3 A, fVector3 B) {
 }
 
 // 内積のSIMD (SSE2) 版
-real32 fdot_fv3_simd(fVector3 A, fVector3 B) {
+internal inline real32
+fdot_fv3_simd(fVector3 A, fVector3 B) {
     __m128 left  = _mm_set_ps(0.0, A.z, A.y, A.x);
     __m128 right = _mm_set_ps(0.0, B.z, B.y, B.x);
     __m128 muled = _mm_mul_ps(left, right);
@@ -48,7 +56,8 @@ real32 fdot_fv3_simd(fVector3 A, fVector3 B) {
 }
 
 // 外積のSIMD (SSE2) 版
-fVector3 fcross_fv3_simd(fVector3 A, fVector3 B) {
+internal inline fVector3
+fcross_fv3_simd(fVector3 A, fVector3 B) {
     __m128 Ayzx      = _mm_set_ps(0.0, A.x, A.z, A.y);
     __m128 Bzxy      = _mm_set_ps(0.0, B.y, B.x, B.z);
     __m128 cls_left  = _mm_mul_ps(Ayzx, Bzxy);
@@ -64,7 +73,8 @@ fVector3 fcross_fv3_simd(fVector3 A, fVector3 B) {
     return result;
 }
 
-iVector3 icross_iv3(iVector3 A, iVector3 B) {
+internal inline iVector3
+icross_iv3(iVector3 A, iVector3 B) {
     iVector3 result;
 
     result.x = (A.y * B.z) - (A.z * B.y);
@@ -74,7 +84,8 @@ iVector3 icross_iv3(iVector3 A, iVector3 B) {
     return result;
 }
 
-iVector3 isub_iv3(iVector3 A, iVector3 B) {
+internal inline iVector3
+isub_iv3(iVector3 A, iVector3 B) {
     A.x -= B.x;
     A.y -= B.y;
     A.z -= B.z;
@@ -82,7 +93,8 @@ iVector3 isub_iv3(iVector3 A, iVector3 B) {
     return A;
 }
 
-fVector3 fsub_fv3(fVector3 A, fVector3 B) {
+internal inline fVector3
+fsub_fv3(fVector3 A, fVector3 B) {
     A.x -= B.x;
     A.y -= B.y;
     A.z -= B.z;

@@ -1,8 +1,11 @@
 # Renderer for fun.
-ソフトウェアレンダラの仕組みを学ぶ為に各OSに存在するライブラリのみを用いて書かれたレンダラ。
+ソフトウェアレンダラの仕組みを学ぶ為に最小限のライブラリを用いて書かれたレンダラー。
 このレンダラはGithubで公開されているコースの[TinyRenderer - software rendering in 500 lines of code](https://github.com/ssloy/tinyrenderer) を元に作られています。
 基本的にコードはこのコースに倣って書かれています。
 
+現状の外部依存:
+stb_truetype: 文字のレンダリングに使用しています。
+stb_image:    テクスチャのロードに使用しています。
 
 # Build
 *Linuxの場合*
@@ -20,3 +23,9 @@ cd RendererForFun
 ./build.bat
 ```
 どちらも`/dist`内にコンパイルされたファイルを作ります。
+
+# TODO
+- [ ] フォントをバンドル
+- [ ] テクスチャ、モデルのロード
+- [ ] IMGUI風GUIの導入
+- [ ] レンダラーの最適化
