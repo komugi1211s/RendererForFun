@@ -99,12 +99,47 @@ draw_bounding_box(Drawing_Buffer *buffer, BoundingBoxi2 box, Color color) {
 
 }
 
+void _line_sweeping(Drawing_Buffer *buffer, iVector2 y_sm, iVector2 y_md, iVector2 y_bg, Color color) {
+    if (y_sm.y > y_md.y) { SWAPVAR(iVector2, y_sm, y_md); }
+    if (y_sm.y > y_bg.y) { SWAPVAR(iVector2, y_sm, y_bg); }
+    if (y_md.y > y_bg.y) { SWAPVAR(iVector2, y_md, y_bg); }
+
+    draw_line(buffer, y_sm.x, y_sm.y, y_md.x, y_md.y, color);
+    draw_line(buffer, y_sm.x, y_sm.y, y_bg.x, y_bg.y, color);
+    draw_line(buffer, y_md.x, y_md.y, y_bg.x, y_bg.y, color);
+
+    real32 top_half_distance    = (y_md.y - y_sm.y);
+    real32 total_distance       = (y_bg.y - y_sm.y);
+    real32 bottom_half_distance = (y_bg.y - y_md.y);
+
+    int32 x0, x1;
+    int32 y = y_sm.y;
+
+    for (; y < y_md.y; ++y) {
+        // Draw top half.
+        real32 total_dt    = (y - y_sm.y)  / total_distance;
+        real32 top_half_dt = (y - y_sm.y)  / top_half_distance;
+        x0 = (y_sm.x * (1.0 - top_half_dt)) + (top_half_dt * y_md.x);
+        x1 = (y_sm.x * (1.0 - total_dt)) + (total_dt * y_bg.x);
+
+        draw_line(buffer, x0, y, x1, y, color);
+    }
+
+    for (; y < y_bg.y; ++y) {
+        // Draw bottom Half.
+        real32 total_dt       = (y - y_sm.y) / total_distance;
+        real32 bottom_half_dt = (y - y_md.y) / bottom_half_distance;
+        x0 = (y_md.x *  (1.0 - bottom_half_dt)) + (bottom_half_dt * y_bg.x);
+        x1 = (y_sm.x  * (1.0 - total_dt)) + (total_dt * y_bg.x);
+        draw_line(buffer, x0, y, x1, y, color);
+    }
+}
+
 // NOTE(fuzzy):
 // 参考: https://shikihuiku.wordpress.com/2017/05/23/barycentric-coordinates%E3%81%AE%E8%A8%88%E7%AE%97%E3%81%A8perspective-correction-partial-derivative%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6/
-internal void
-barycentric_drawing(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3 C, Color color)
-{
-    PROFILE_FUNC_START;
+
+void draw_filled_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3 C, Color color) {
+    // if (USE_LINE_SWEEPING) _line_sweeping(buffer, y_sm, y_md, y_bg, color);
     uint32 *buf = _CUR_BUF(buffer);
     BoundingBoxf3 bd_box = BB_fV3(A, B, C);
     uint32 c = color_to_uint32(&color);
@@ -150,49 +185,72 @@ barycentric_drawing(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3 C, 
             }
         }
     }
-    PROFILE_FUNC_END;
 }
 
-void _line_sweeping(Drawing_Buffer *buffer, iVector2 y_sm, iVector2 y_md, iVector2 y_bg, Color color) {
-    if (y_sm.y > y_md.y) { SWAPVAR(iVector2, y_sm, y_md); }
-    if (y_sm.y > y_bg.y) { SWAPVAR(iVector2, y_sm, y_bg); }
-    if (y_md.y > y_bg.y) { SWAPVAR(iVector2, y_md, y_bg); }
+// draw_filled_triangleとほとんど同じ
+void draw_triangle_with_texture(Drawing_Buffer *buffer, Texture *texture, fVector3 texcoords[3],
+                                real32 light_intensity, fVector3 A, fVector3 B, fVector3 C) 
+{
+    uint32 *buf = _CUR_BUF(buffer);
+    BoundingBoxf3 bd_box = BB_fV3(A, B, C);
+    fVector3 AB, AC, PA;
 
-    draw_line(buffer, y_sm.x, y_sm.y, y_md.x, y_md.y, color);
-    draw_line(buffer, y_sm.x, y_sm.y, y_bg.x, y_bg.y, color);
-    draw_line(buffer, y_md.x, y_md.y, y_bg.x, y_bg.y, color);
+    // 最適化用に iVec2 は使わない（使うと鬼のように遅くなる）
+    AB.x = B.x - A.x;
+    AB.y = B.y - A.y;
+    AC.x = C.x - A.x;
+    AC.y = C.y - A.y;
 
-    real32 top_half_distance    = (y_md.y - y_sm.y);
-    real32 total_distance       = (y_bg.y - y_sm.y);
-    real32 bottom_half_distance = (y_bg.y - y_md.y);
+    real32 det_T = AB.x * AC.y - AC.x * AB.y;
+    bool32 triangle_is_degenerate = fabsf(det_T) < 1;
 
-    int32 x0, x1;
-    int32 y = y_sm.y;
+    if (!triangle_is_degenerate) {
+        int32 y_min = (int32)floor(bd_box.min_v.y);
+        int32 y_max = (int32)ceil(bd_box.max_v.y);
+        int32 x_min = (int32)floor(bd_box.min_v.x);
+        int32 x_max = (int32)ceil(bd_box.max_v.x);
 
-    for (; y < y_md.y; ++y) {
-        // Draw top half.
-        real32 total_dt    = (y - y_sm.y)  / total_distance;
-        real32 top_half_dt = (y - y_sm.y)  / top_half_distance;
-        x0 = (y_sm.x * (1.0 - top_half_dt)) + (top_half_dt * y_md.x);
-        x1 = (y_sm.x * (1.0 - total_dt)) + (total_dt * y_bg.x);
+        for(int32 y = y_min; y < y_max; ++y) {
+            PA.y = y - A.y;
+            for(int32 x = x_min; x < x_max; ++x) {
+                PA.x = x - A.x;
+                real32 gamma1, gamma2, gamma3;
 
-        draw_line(buffer, x0, y, x1, y, color);
+                gamma1 = (PA.x * AC.y - PA.y * AC.x) / det_T;
+                gamma2 = (AB.x * PA.y - AB.y * PA.x) / det_T;
+                gamma3 = 1.f - gamma1 - gamma2;
+
+                // (1 - x - y)A + xB + yC = P' なので x+y+(1-x-y) = 1 とならなければならず
+                // どれか1つの点が負数の場合三角形の外に点があることになる
+                if (gamma1 < 0 || gamma2 < 0 || gamma3 < 0) continue;
+
+                // (1 - x - y)A + xB + yC として定義してあるので
+                // 掛け算もそれに合わせて揃えないといけない
+                real32 z_value = (A.z * gamma3) + (B.z * gamma1) + (C.z * gamma2);
+                int32 position = (y * buffer->window_width) + x;
+
+                if (position > (buffer->window_width * buffer->window_height)) continue;
+                if (position < 0) continue;
+
+                real32 t_x = (texcoords[0].x * gamma3) + (texcoords[1].x * gamma1) + (texcoords[2].x * gamma2);
+                real32 t_y = (texcoords[0].y * gamma3) + (texcoords[1].y * gamma1) + (texcoords[2].y * gamma2);
+
+                int32 tex_x = t_x * texture->width;
+                int32 tex_y = t_y * texture->height;
+                int32 tex_p = (int32)(tex_x + (tex_y * texture->width)) * texture->channels;
+
+                uint32 r, g, b;
+                r = texture->data[tex_p]     * light_intensity;
+                g = texture->data[tex_p + 1] * light_intensity;
+                b = texture->data[tex_p + 2] * light_intensity;
+
+                if (buffer->z_buffer[position] < z_value) {
+                    buffer->z_buffer[position] = z_value;
+                    buf[position] = (uint32)(255 << 24 | r << 16 | g << 8 | b);
+                }
+            }
+        }
     }
-
-    for (; y < y_bg.y; ++y) {
-        // Draw bottom Half.
-        real32 total_dt       = (y - y_sm.y) / total_distance;
-        real32 bottom_half_dt = (y - y_md.y) / bottom_half_distance;
-        x0 = (y_md.x *  (1.0 - bottom_half_dt)) + (bottom_half_dt * y_bg.x);
-        x1 = (y_sm.x  * (1.0 - total_dt)) + (total_dt * y_bg.x);
-        draw_line(buffer, x0, y, x1, y, color);
-    }
-}
-
-void draw_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3 C, Color color) {
-    // if (USE_LINE_SWEEPING) _line_sweeping(buffer, y_sm, y_md, y_bg, color);
-
-    barycentric_drawing(buffer, A, B, C, color);
 }
 
 void draw_triangle_wireframe(Drawing_Buffer *buffer, iVector2 A, iVector2 B, iVector2 C, Color color) {
@@ -215,44 +273,50 @@ void turn_vertex_into_screen_space(ModelVertex world_space,
     world_space[2].y = ((1.0 + world_space[2].y) * (window_height - 1)  / 2);
 }
 
-void draw_model(Drawing_Buffer *buffer, Model *model, Color color) {
+void draw_model(Drawing_Buffer *buffer, Model *model, Texture *texture) {
     PROFILE_FUNC_START;
-    ModelVertex vertex; // typedef to fVector3[3]
     fVector3 light_pos = fVec3(0.0, 0.0, -10.0);
     fVector3 AB, AC;
     fVector3 surface_normal, light_normal;
     real32 color_intensity;
 
-    for (size_t i = 0; i < model->num_vert_idx; ++i) {
-        if (load_model_vertices(model, i, vertex)) {
-            AB = fsub_fv3(vertex[1], vertex[0]);
-            AC = fsub_fv3(vertex[2], vertex[0]);
+    fVector3 vertices[3]  = {0};
+    fVector3 texcoords[3] = {0};
+
+    real32 aspect_ratio = 16.0 / 9.0;
+    for (size_t i = 0; i < model->num_indexes; ++i) {
+        bool32 vert_loaded = load_model_vertices(model, i, vertices);
+        bool32 tex_loaded  = load_model_texcoords(model, i, texcoords);
+
+        if (vert_loaded && tex_loaded) {
+            project_perspective(NULL, &vertices[0], 90, aspect_ratio, 0.0, 100.0);
+            project_perspective(NULL, &vertices[1], 90, aspect_ratio, 0.0, 100.0);
+            project_perspective(NULL, &vertices[2], 90, aspect_ratio, 0.0, 100.0);
+
+            AB = fsub_fv3(vertices[1], vertices[0]);
+            AC = fsub_fv3(vertices[2], vertices[0]);
 
             PROFILE("calculate light direction") {
-                surface_normal = fnormalize_fv3(fcross_fv3_simd(AC, AB));
-                light_normal   = fnormalize_fv3(light_pos);
+                surface_normal  = fnormalize_fv3(fcross_fv3_simd(AC, AB));
+                light_normal    = fnormalize_fv3(light_pos);
                 color_intensity = fdot_fv3(light_normal, surface_normal);
             }
 
             if (color_intensity < 0) continue;
+            turn_vertex_into_screen_space(vertices, buffer->window_width,
+                                                    buffer->window_height);
 
-            Color new_color;
-            new_color.r = color.r * color_intensity;
-            new_color.g = color.g * color_intensity;
-            new_color.b = color.b * color_intensity;
-            new_color.a = color.a * color_intensity;
-
-            turn_vertex_into_screen_space(vertex, buffer->window_width, buffer->window_height);
-            draw_triangle(buffer, vertex[0], vertex[1], vertex[2], new_color);
+            draw_triangle_with_texture(buffer, texture, texcoords, color_intensity,
+                                       vertices[0], vertices[1], vertices[2]);
         }
     }
     PROFILE_FUNC_END;
 }
 
 void draw_model_wireframe(Drawing_Buffer *buffer, Model *model, Color color) {
-    ModelVertex vertex;
+    fVector3 vertex[3];
 
-    for (size_t i = 0; i < model->num_vert_idx; ++i) {
+    for (size_t i = 0; i < model->num_indexes; ++i) {
         if (load_model_vertices(model, i, vertex)) {
             iVector2 one, two, three;
 
@@ -305,8 +369,6 @@ void draw_text(Drawing_Buffer *buffer, FontData *font, int32 start_x, int32 star
 
         DEBUGCharacterBitmap *bitmap;
         if (!bitmap_array[character].allocated) {
-            printf("Creating bitmap for :%c\n", character);
-
             DEBUGCharacterBitmap bitmap;
             bitmap.allocated = stbtt_GetCodepointBitmap(&font->font_info, font->char_scale, font->char_scale,
                                                          character, &bitmap.width, &bitmap.height, &bitmap.x_off, &bitmap.y_off);
@@ -333,8 +395,15 @@ void draw_text(Drawing_Buffer *buffer, FontData *font, int32 start_x, int32 star
             }
         }
     }
-
 }
 
+void project_perspective(Camera *cam, fVector3 *target, real32 fov, real32 aspect_ratio, real32 z_near, real32 z_far) {
 
+    fVector3 copy = *target;
 
+    real32 tan_fov = tanf(fov / 2.0);
+
+    target->x = copy.x / (aspect_ratio * tan_fov);
+    target->y = copy.y / tan_fov;
+    target->z = copy.z * -((z_near + z_far) / (z_near - z_far)) - ((2 * z_far * z_near) / (z_far - z_near));
+}

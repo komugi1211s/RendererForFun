@@ -19,17 +19,32 @@
 // IMPORTANT NOTE(fuzzy): This only works in IEEE-754 floating point format.
 // if it does not work, well then good luck.
 
-bool32 load_model_vertices(Model *model, size_t triangle_index, ModelVertex out) {
-    if (model->num_vert_idx < (triangle_index - 1))  return 0;
+bool32 load_model_vertices(Model *model, size_t triangle_index, fVector3 out_vertex[3]) {
+    ASSERT(model->num_indexes > triangle_index);
+    ModelIndex indexes = model->indexes[triangle_index];
 
-    iVector3 indexes = model->vert_idx[triangle_index];
-    if ((indexes.x - 1) > model->num_vertices) return 0;
-    if ((indexes.y - 1) > model->num_vertices) return 0;
-    if ((indexes.z - 1) > model->num_vertices) return 0;
+    if ((indexes.vert_idx.x - 1) > model->num_vertices) return 0;
+    if ((indexes.vert_idx.y - 1) > model->num_vertices) return 0;
+    if ((indexes.vert_idx.z - 1) > model->num_vertices) return 0;
 
-    out[0] = model->vertices[indexes.x-1];
-    out[1] = model->vertices[indexes.y-1];
-    out[2] = model->vertices[indexes.z-1];
+    out_vertex[0] = model->vertices[indexes.vert_idx.x-1];
+    out_vertex[1] = model->vertices[indexes.vert_idx.y-1];
+    out_vertex[2] = model->vertices[indexes.vert_idx.z-1];
+
+    return 1;
+}
+
+bool32 load_model_texcoords(Model *model, size_t triangle_index, fVector3 out_tex[3]) {
+    ASSERT(model->num_indexes > triangle_index);
+    ModelIndex indexes = model->indexes[triangle_index];
+
+    ASSERT((indexes.tex_idx.x - 1) < model->num_texcoords);
+    ASSERT((indexes.tex_idx.y - 1) < model->num_texcoords);
+    ASSERT((indexes.tex_idx.z - 1) < model->num_texcoords);
+
+    out_tex[0] = model->texcoords[indexes.tex_idx.x-1];
+    out_tex[1] = model->texcoords[indexes.tex_idx.y-1];
+    out_tex[2] = model->texcoords[indexes.tex_idx.z-1];
 
     return 1;
 }
@@ -38,7 +53,8 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
     uint32 current_line = 0;
 
     model->num_vertices = 0;
-    model->num_vert_idx  = 0;
+    model->num_texcoords = 0;
+    model->num_indexes = 0;
 
     size_t maximum_idx = obj_file_length - 1;
     while(*obj_file) {
@@ -81,16 +97,41 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
                     return 0;
                 }
 
-                if (next_char == 'p' || next_char == 't' || next_char == 'n') {
+                if (next_char == 'p' || next_char == 'n') {
                     while (*obj_file != '\n' && *obj_file != '\0') {
                         obj_file++;
                     }
                     break;
                 }
 
-                if (next_char == ' ') { // valid vertex!
+                fVector3 result;
+
+                if (next_char == 't') { // texture vertex!
+                    obj_file += 3;
+                    ASSERT(model->num_texcoords < maximum_idx);
+
+                    char *skipped;
+                    result.x = strtof(obj_file, &skipped);
+                    if(*skipped != ' ') {
+                        TRACE("Expected space separator, got `%c` at line %u", *skipped, current_line);
+                        return 0;
+                    }
+                    obj_file = ++skipped;
+
+                    result.y = strtof(obj_file, &skipped);
+                    if(*skipped != ' ') {
+                        TRACE("Expected space separator, got `%c` at line %u", *skipped, current_line);
+                        return 0;
+                    }
+                    obj_file = ++skipped;
+
+                    result.z = strtof(obj_file, &skipped);
+                    obj_file = skipped;
+
+                    model->texcoords[model->num_texcoords++] = result;
+
+                } else if (next_char == ' ') { // valid vertex!
                     obj_file += 2;
-                    fVector3 result;
                     ASSERT(model->num_vertices < maximum_idx);
 
                     char *skipped;
@@ -132,12 +173,14 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
             case 'f':
             {
                 obj_file++;
-                ASSERT(model->num_vert_idx < maximum_idx);
+                ASSERT(model->num_indexes < maximum_idx);
                 char *skipped;
-                iVector3 result;
+                ModelIndex index_result;
+                index_result.vert_idx.x = strtod(obj_file, &skipped);
+                if (*skipped == '/') {
+                    obj_file = ++skipped;
+                    index_result.tex_idx.x = strtod(obj_file, &skipped);
 
-                result.x = strtod(obj_file, &skipped);
-                if (*skipped == '/')
                     while(*skipped != ' ') {
                         if (*skipped == '\0') {
                             TRACE("Unexpected EOF at line %u", current_line);
@@ -145,11 +188,15 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
                         }
                         skipped++;
                     }
+                }
 
                 obj_file = ++skipped;
 
-                result.y = strtod(obj_file, &skipped);
-                if (*skipped == '/')
+                index_result.vert_idx.y = strtod(obj_file, &skipped);
+                if (*skipped == '/') {
+                    obj_file = ++skipped;
+                    index_result.tex_idx.y = strtod(obj_file, &skipped);
+
                     while(*skipped != ' ') {
                         if (*skipped == '\0') {
                             TRACE("Unexpected EOF at line %u", current_line);
@@ -157,16 +204,21 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
                         }
                         skipped++;
                     }
-
+                }
                 obj_file = ++skipped;
 
-                result.z = strtod(obj_file, &skipped);
+                index_result.vert_idx.z = strtod(obj_file, &skipped);
+                if (*skipped == '/') {
+                    obj_file = ++skipped;
+                    index_result.tex_idx.z = strtod(obj_file, &skipped);
+                }
+
                 while(*skipped != '\n') {
                     skipped++;
                 }
                 obj_file = skipped;
 
-                model->vert_idx[model->num_vert_idx++] = result;
+                model->indexes[model->num_indexes++] = index_result;
             } break;
 
             default:

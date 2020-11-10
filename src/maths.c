@@ -94,10 +94,28 @@ isub_iv3(iVector3 A, iVector3 B) {
 }
 
 internal inline fVector3
+fadd_fv3(fVector3 A, fVector3 B) {
+    A.x += B.x;
+    A.y += B.y;
+    A.z += B.z;
+
+    return A;
+}
+
+internal inline fVector3
 fsub_fv3(fVector3 A, fVector3 B) {
     A.x -= B.x;
     A.y -= B.y;
     A.z -= B.z;
+
+    return A;
+}
+
+internal inline fVector3
+fmul_fv3_fscalar(fVector3 A, real32 Scalar) {
+    A.x *= Scalar;
+    A.y *= Scalar;
+    A.z *= Scalar;
 
     return A;
 }

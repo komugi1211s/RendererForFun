@@ -110,6 +110,8 @@ internal inline fVector3 fcross_fv3_simd(fVector3 A, fVector3 B);
 
 internal inline iVector3 icross_iv3(iVector3 A, iVector3 B);
 internal inline iVector3 isub_iv3(iVector3 A, iVector3 B);
+internal inline fVector3 fadd_fv3(fVector3 A, fVector3 B);
 internal inline fVector3 fsub_fv3(fVector3 A, fVector3 B);
+internal inline fVector3 fmul_fv3_fscalar(fVector3 A, real32 Scalar);
 
 #endif

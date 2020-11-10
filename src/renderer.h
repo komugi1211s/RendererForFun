@@ -17,8 +17,15 @@ typedef struct Drawing_Buffer {
 
 } Drawing_Buffer;
 
+
+typedef struct Camera {
+    fVector3 position;
+    fVector3 target;
+    fVector3 up;
+} Camera;
+
 // TODO(fuzzy):
-// RGB format.
+// RGB/BGR format.
 
 typedef struct Color {
     real32 r, g, b, a;
@@ -42,7 +49,8 @@ uint32 color_to_uint32(Color *color);
 void draw_line(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, Color color);
 void draw_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3 C, Color color);
 
-void draw_model(Drawing_Buffer *buffer, Model *model, Color color);
+void draw_model(Drawing_Buffer *buffer, Model *model, Texture *texture);
+void project_perspective(Camera *cam, fVector3 *target, real32 fov, real32 aspect_ratio, real32 z_near, real32 z_far);
 
 #ifdef STB_TRUETYPE_IMPLEMENTATION
 
