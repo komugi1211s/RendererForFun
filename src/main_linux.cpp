@@ -210,7 +210,7 @@ void draw_debug_menu(Drawing_Buffer *buffer, Input *input, FontData *font_data, 
     layout.text(buffer, format("MpF: %lf MpF, FPS: %lf, Cycle: %lu \n", ms_per_frame, fps, cycle_elapsed));
     for (int32 i = 0; i < profile_info_count; ++i) {
         if (!profile_info[i].is_started) {
-            layout.text(buffer, format("[%3d] Name: %-20s, Cycle: %10lu", i, profile_info[i].name, profile_info[i].cycle_elapsed));
+            layout.text(buffer, format("[%3d]%s, Cycle: %lu", i, profile_info[i].name, profile_info[i].cycle_elapsed));
         }
     }
     layout.category_end();

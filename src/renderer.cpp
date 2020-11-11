@@ -292,7 +292,7 @@ void draw_filled_rectangle(Drawing_Buffer *buffer, fVector3 position, fVector3 s
 }
 
 void draw_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Texture *texture) {
-    PROFILE_FUNC_START;
+    PROFILE_FUNC
     fVector3 light_pos = fVec3(0.0, 0.0, -10.0);
     fVector3 AB, AC;
     fVector3 surface_normal, light_normal;
@@ -329,7 +329,6 @@ void draw_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Texture *t
                                        vertices[0], vertices[1], vertices[2]);
         }
     }
-    PROFILE_FUNC_END;
 }
 
 void draw_model_wireframe(Drawing_Buffer *buffer, Model *model, Color color) {

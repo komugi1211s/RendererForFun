@@ -5,9 +5,8 @@ usage:
     }
 
     void target_function() {
-        PROFILE_FUNC_START
+        PROFILE_FUNC
         ...
-        PROFILE_FUNC_END
     }
 
 */
