@@ -15,25 +15,39 @@ typedef struct iVector2 {
     int32 __pad, __pad2;
 } iVector2;
 
+
 typedef struct iVector3 {
-    int32 x, y, z;
-    int32 __pad;
+    int32 x, y, z, __pad;
 } iVector3;
 
+
 typedef struct fVector3 {
-    real32 x, y, z;
-    real32 __pad;
+    real32 x, y, z, __pad;
 } fVector3;
+
+
+typedef struct fVector4 {
+    real32 x, y, z, w;
+} fVector4;
+
 
 typedef struct BoundingBoxi2 {
     iVector2 min_v;
     iVector2 max_v;
 } BoundingBoxi2;
 
+
 typedef struct BoundingBoxf3 {
     fVector3 min_v;
     fVector3 max_v;
 } BoundingBoxf3;
+
+
+typedef struct fMat4x4 {
+    struct {
+        real32 col[4];
+    } row[4];
+} fMat4x4;
 
 
 internal inline iVector2
@@ -61,6 +75,16 @@ fVec3(real32 x, real32 y, real32 z) {
     result.y = y;
     result.z = z;
 
+    return result;
+}
+
+internal inline fMat4x4
+fMat4Identity() {
+    fMat4x4 result = {0};
+    result.row[0].col[0] = 1.0f;
+    result.row[1].col[1] = 1.0f;
+    result.row[2].col[2] = 1.0f;
+    result.row[3].col[3] = 1.0f;
     return result;
 }
 
@@ -118,4 +142,6 @@ internal inline fVector3 fadd_fv3(fVector3 A, fVector3 B);
 internal inline fVector3 fsub_fv3(fVector3 A, fVector3 B);
 internal inline fVector3 fmul_fv3_fscalar(fVector3 A, real32 Scalar);
 
+internal inline fMat4x4  fmul_fmat4x4(fMat4x4 A, fMat4x4 B);
+internal inline fVector4 fmul_fmat4x4_fv4(fMat4x4 A, fVector4 B);
 #endif

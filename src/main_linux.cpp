@@ -344,10 +344,10 @@ int main(int argc, char **argv) {
 
                 uint64 time_elapsed, cycle_elapsed;
                 real64 ms_per_frame, fps;
+                Color bg = rgb_opaque(0.0, 0.2, 0.2);
 
                 bool32 running = 1;
                 while (running) {
-                    Color bg = rgb_opaque(0.0, 0.2, 0.2);
                     clear_buffer(&buffer, bg);
 
                     clock_gettime(CLOCK_MONOTONIC_RAW, &_timespec_now);
@@ -422,7 +422,6 @@ int main(int argc, char **argv) {
 
                     update_camera_with_input(&camera, &input, 0.016);
                     draw_model(&buffer, &model, &camera, &texture);
-
 
                     if (input.debug_menu) {
                         draw_debug_menu(&buffer, &input, &font_data, &camera, &model,

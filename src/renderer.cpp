@@ -183,6 +183,7 @@ void draw_filled_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVecto
 void draw_triangle_with_texture(Drawing_Buffer *buffer, Texture *texture, fVector3 texcoords[3],
                                 real32 light_intensity, fVector3 A, fVector3 B, fVector3 C) 
 {
+    PROFILE_FUNC
     uint32 *buf = _CUR_BUF(buffer);
     BoundingBoxf3 bd_box = BB_fV3(A, B, C);
     fVector3 AB, AC, PA;
@@ -291,6 +292,8 @@ void draw_filled_rectangle(Drawing_Buffer *buffer, fVector3 position, fVector3 s
     }
 }
 
+void project_perspective(Camera *cam, fVector3 *target);
+void project_view(Camera *cam, fVector3 *target);
 void draw_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Texture *texture) {
     PROFILE_FUNC
     fVector3 light_pos = fVec3(0.0, 0.0, -10.0);
@@ -315,11 +318,9 @@ void draw_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Texture *t
             AB = fsub_fv3(vertices[1], vertices[0]);
             AC = fsub_fv3(vertices[2], vertices[0]);
 
-            PROFILE("calculate light direction") {
-                surface_normal  = fnormalize_fv3(fcross_fv3_simd(AC, AB));
-                light_normal    = fnormalize_fv3(light_pos);
-                color_intensity = fdot_fv3(light_normal, surface_normal);
-            }
+            surface_normal  = fnormalize_fv3(fcross_fv3_simd(AC, AB));
+            light_normal    = fnormalize_fv3(light_pos);
+            color_intensity = fdot_fv3(light_normal, surface_normal);
 
             if (color_intensity < 0) continue;
             project_viewport(vertices, buffer->window_width,
@@ -368,6 +369,7 @@ typedef struct DEBUGCharacterBitmap {
 global_variable DEBUGCharacterBitmap bitmap_array[BITMAP_ARRAY_SIZE] = {0}; // THIS IS TOO STUPID
 
 void draw_text(Drawing_Buffer *buffer, FontData *font, int32 start_x, int32 start_y, char *text) {
+    PROFILE_FUNC
     int32 x = start_x;
     int32 y = start_y + (font->base_line + font->line_gap);
     uint32 *buf = _CUR_BUF(buffer);
@@ -391,7 +393,7 @@ void draw_text(Drawing_Buffer *buffer, FontData *font, int32 start_x, int32 star
             if (bitmap.allocated) {
                 bitmap_array[character] = bitmap;
             } else {
-                bitmap_array[character].allocated = (uint8 *)0xFFFFFFFFFFFFFFF;
+                bitmap_array[character].allocated = NULL;
                 bitmap_array[character].width = -1;
                 bitmap_array[character].height = -1;
             }
@@ -413,33 +415,78 @@ void draw_text(Drawing_Buffer *buffer, FontData *font, int32 start_x, int32 star
     }
 }
 
+int32 get_text_width(FontData *font, char *text) {
+    int32 x = 0;
+    for(char *t = text; *t; ++t) {
+        char character = *t;
+        int32 advance, lsb;
+        stbtt_GetCodepointHMetrics(&font->font_info, character, &advance, &lsb);
+        x += (advance + lsb) * font->char_scale;
+    }
+    return x;
+}
+
 void project_perspective(Camera *cam, fVector3 *target) {
     /* apply projection for left-handed y-up perspective. */
-    fVector3 copy  = *target;
-    real32 tan_fov = tanf(cam->fov / 2.0);
+    fVector4 copied;
+    copied.x = target->x;
+    copied.y = target->y;
+    copied.z = target->z;
+    copied.w = 1.0;
 
-    target->x = copy.x / (cam->aspect_ratio * tan_fov);
-    target->y = copy.y / tan_fov;
-    target->z = copy.z * -((cam->z_near + cam->z_far) / (cam->z_near - cam->z_far))
-                         - ((2 * cam->z_far * cam->z_near) / (cam->z_far - cam->z_near));
+    real32 tan_fov = tanf(cam->fov / 2.0);
+    fMat4x4 proj = {0};
+
+    proj.row[0].col[0] = 1.0f / (cam->aspect_ratio * tan_fov);
+    proj.row[1].col[1] = 1.0f / tan_fov;
+    proj.row[2].col[2] = (cam->z_near + cam->z_far) / (cam->z_far - cam->z_near);
+    proj.row[2].col[3] = -(2.0 * cam->z_far * cam->z_near) / (cam->z_far - cam->z_near);
+    proj.row[3].col[2] = -1.0f;
+
+    copied = fmul_fmat4x4_fv4(proj, copied);
+    target->x = copied.x;
+    target->y = copied.y;
+    target->z = copied.z;
 }
 
 void project_view(Camera *cam, fVector3 *target) {
     /*
-     * apply lookat view perspective based on camera.
+     * apply lookat view based on camera.
      * 注意: 毎回方向ベクターを計算するのは無駄かも知れない。
      * */
 
-    fVector3 copy  = *target;
+    fVector4 copied;
+    copied.x = target->x;
+    copied.y = target->y;
+    copied.z = target->z;
+    copied.w = 1.0;
+
     fVector3 direction, right, up;
-
     fVector3 looking_at = fadd_fv3(cam->position, cam->target);
-
     direction = fnormalize_fv3(fsub_fv3(looking_at, cam->position));
     right     = fnormalize_fv3(fcross_fv3(cam->up, direction));
     up        = fnormalize_fv3(fcross_fv3(direction, right));
 
-    target->x = ((copy.x * right.x) + (copy.y * right.y) + (copy.z * right.z)) - fdot_fv3(right, cam->position);
-    target->y = ((copy.x * up.x) + (copy.y * up.y) + (copy.z * up.z)) - fdot_fv3(up, cam->position);
-    target->z = ((copy.x * direction.x) + (copy.y * direction.y) + (copy.z * direction.z)) - fdot_fv3(direction, cam->position);
+    fMat4x4 lookat = {0};
+    lookat.row[0].col[0] = right.x;
+    lookat.row[0].col[1] = right.y;
+    lookat.row[0].col[2] = right.z;
+
+    lookat.row[1].col[0] = up.x;
+    lookat.row[1].col[1] = up.y;
+    lookat.row[1].col[2] = up.z;
+
+    lookat.row[2].col[0] = direction.x;
+    lookat.row[2].col[1] = direction.y;
+    lookat.row[2].col[2] = direction.z;
+
+    lookat.row[0].col[3] = -fdot_fv3(right,     cam->position);
+    lookat.row[1].col[3] = -fdot_fv3(up,        cam->position);
+    lookat.row[2].col[3] = -fdot_fv3(direction, cam->position);
+    lookat.row[3].col[3] = 1.0;
+
+    copied = fmul_fmat4x4_fv4(lookat, copied);
+    target->x = copied.x;
+    target->y = copied.y;
+    target->z = copied.z;
 }

@@ -5,6 +5,20 @@
 #include "maths.h"
 #include "model.h"
 
+
+global_variable fMat4x4 view_matrix;
+global_variable fMat4x4 projection_matrix;
+
+internal inline void
+set_projection(fMat4x4 projection) {
+    projection_matrix = projection;
+}
+
+internal inline void
+set_view(fMat4x4 view) {
+    view_matrix = view;
+}
+
 typedef struct Drawing_Buffer {
     int32 window_width;
     int32 window_height;
@@ -68,14 +82,14 @@ typedef struct Color {
     Color blend(Color other) {
         /*
          * Typical Alpha multiply Blend
-         * https://ja.wikipedia.org/wiki/%E3%82%A2%E3%83%AB%E3%83%95%E3%82%A1%E3%83%81%E3%83%A3%E3%83%B3%E3%83%8D%E3%83%AB
+         * https://ja.wikipedia.org/wiki/%E3%82%A2%E3%83%AB%E3%83%95%E3%82%A1%E3%83%96%E3%83%AC%E3%83%B3%E3%83%89
          * */
 
         Color result = {0};
-        result.r = r * other.r;
-        result.g = g * other.g;
-        result.b = b * other.b;
-        result.a = a * other.a;
+        result.a = a + other.a * (1.0 - a);
+        result.r = r + other.r * (1.0 - a);
+        result.g = g + other.g * (1.0 - a);
+        result.b = b + other.b * (1.0 - a);
 
         return result;
     }
@@ -106,8 +120,8 @@ void clear_buffer(Drawing_Buffer *buffer, Color color);
 void draw_line(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, Color color);
 void draw_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3 C, Color color);
 void draw_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Texture *texture);
-void project_perspective(Camera *cam, fVector3 *target);
-void project_view(Camera *cam, fVector3 *target);
+void apply_projection(Camera *cam, fVector3 *target);
+void apply_view(Camera *cam, fVector3 *target);
 
 #ifdef STB_TRUETYPE_IMPLEMENTATION
 
@@ -121,6 +135,7 @@ typedef struct FontData {
 } FontData;
 
 void draw_text(Drawing_Buffer *buffer, FontData *font_data, int32 x, int32 y, char *Text);
+int32 get_text_width(FontData *font, char *text);
 
 #endif // STB_TRUETYPE_IMPLEMENTATION
 #endif // _K_RENDERER_H

@@ -119,3 +119,41 @@ fmul_fv3_fscalar(fVector3 A, real32 Scalar) {
 
     return A;
 }
+
+internal inline fMat4x4
+fmul_fmat4x4(fMat4x4 A, fMat4x4 B) {
+    fMat4x4 result = {0};
+    for (int32 i = 0; i < 4; ++i) {
+        for (int32 j = 0; j < 4; ++j) {
+            for (int32 k = 0; k < 4; ++k) {
+                result.row[i].col[j] += A.row[i].col[k] * B.row[k].col[j];
+            }
+        }
+    }
+
+    return result;
+}
+
+internal inline fVector4
+fmul_fmat4x4_fv4(fMat4x4 A, fVector4 B) {
+    fVector4 result = {0};
+
+    result.x = (A.row[0].col[0] * B.x) + (A.row[0].col[1] * B.y) + (A.row[0].col[2] * B.z) + (A.row[0].col[3] * B.w);
+    result.y = (A.row[1].col[0] * B.x) + (A.row[1].col[1] * B.y) + (A.row[1].col[2] * B.z) + (A.row[1].col[3] * B.w);
+    result.z = (A.row[2].col[0] * B.x) + (A.row[2].col[1] * B.y) + (A.row[2].col[2] * B.z) + (A.row[2].col[3] * B.w);
+    result.w = (A.row[3].col[0] * B.x) + (A.row[3].col[1] * B.y) + (A.row[3].col[2] * B.z) + (A.row[3].col[3] * B.w);
+
+    return result;
+}
+
+internal inline fVector4
+fmul_fv4_fmat4x4(fVector4 A, fMat4x4 B) {
+    fVector4 result = {0};
+
+    result.x = (A.x * B.row[0].col[0]) + (A.y * B.row[1].col[0]) + (A.z * B.row[2].col[0]) + (A.w * B.row[3].col[0]);
+    result.y = (A.x * B.row[0].col[1]) + (A.y * B.row[1].col[1]) + (A.z * B.row[2].col[1]) + (A.w * B.row[3].col[1]);
+    result.z = (A.x * B.row[0].col[2]) + (A.y * B.row[1].col[2]) + (A.z * B.row[2].col[2]) + (A.w * B.row[3].col[2]);
+    result.w = (A.x * B.row[0].col[3]) + (A.y * B.row[1].col[3]) + (A.z * B.row[2].col[3]) + (A.w * B.row[3].col[3]);
+
+    return result;
+}
