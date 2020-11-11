@@ -4,18 +4,6 @@
 #define USE_LINE_SWEEPING 0
 #define _CUR_BUF(buf)     (buf->is_drawing_first ? buf->second_buffer : buf->first_buffer)
 
-// TODO(fuzzy): BGRA系統だと動かない
-uint32 color_to_uint32(Color *color) {
-    uint8 r, g, b, a;
-
-    a = (uint8)floor(MATHS_MAX(0.0, MATHS_MIN(color->a, 1.0)) * 255.0);
-    r = (uint8)floor(MATHS_MAX(0.0, MATHS_MIN(color->r, 1.0)) * 255.0);
-    g = (uint8)floor(MATHS_MAX(0.0, MATHS_MIN(color->g, 1.0)) * 255.0);
-    b = (uint8)floor(MATHS_MAX(0.0, MATHS_MIN(color->b, 1.0)) * 255.0);
-
-    uint32 result = ((a << 24) | (r << 16) | (g << 8) | b);
-    return result;
-}
 
 void swap_buffer(Drawing_Buffer *buffer) {
     buffer->is_drawing_first = !buffer->is_drawing_first;
@@ -25,7 +13,7 @@ void clear_buffer(Drawing_Buffer *buffer, Color color) {
     uint32 *buf = _CUR_BUF(buffer);
     uint32 total_size = buffer->window_width * buffer->window_height;
 
-    uint32 _color = color_to_uint32(&color);
+    uint32 _color = color.to_uint32_argb();
     real32 z_buffer_min = -1.175494351e-38f;
     for (int32 i = 0; i < total_size; ++i) {
         buf[i] = _color;
@@ -57,7 +45,7 @@ void draw_line(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, C
     ASSERT(delta >= 0);
     bool32 parallel_to_axis = y_end == y_start;
 
-    uint32 c = color_to_uint32(&color);
+    uint32 c = color.to_uint32_argb();
 
     // NOTE(fuzzy): Testing optimization.
     if (parallel_to_axis) {
@@ -142,7 +130,7 @@ void draw_filled_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVecto
     // if (USE_LINE_SWEEPING) _line_sweeping(buffer, y_sm, y_md, y_bg, color);
     uint32 *buf = _CUR_BUF(buffer);
     BoundingBoxf3 bd_box = BB_fV3(A, B, C);
-    uint32 c = color_to_uint32(&color);
+    uint32 c = color.to_uint32_argb();
     fVector3 AB, AC, PA;
 
     // 最適化用に iVec2 は使わない（使うと鬼のように遅くなる）
@@ -173,11 +161,15 @@ void draw_filled_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVecto
                 // (1 - x - y)A + xB + yC = P' なので x+y+(1-x-y) = 1 とならなければならず
                 // どれか1つの点が負数の場合三角形の外に点があることになる
                 if (gamma1 < 0 || gamma2 < 0 || gamma3 < 0) continue;
+                if (gamma1 > 1 || gamma2 > 1 || gamma3 > 1) continue;
 
                 // (1 - x - y)A + xB + yC として定義してあるので
                 // 掛け算もそれに合わせて揃えないといけない
                 real32 z_value = (A.z * gamma3) + (B.z * gamma1) + (C.z * gamma2);
                 int32 position = (y * buffer->window_width) + x;
+                if (position > (buffer->window_width * buffer->window_height)) continue;
+                if (position < 0) continue;
+
                 if (buffer->z_buffer[position] < z_value) {
                     buffer->z_buffer[position] = z_value;
                     buf[position] = c;
@@ -231,6 +223,7 @@ void draw_triangle_with_texture(Drawing_Buffer *buffer, Texture *texture, fVecto
 
                 if (position > (buffer->window_width * buffer->window_height)) continue;
                 if (position < 0) continue;
+                if (x > buffer->window_width || x < 0) continue;
 
                 real32 t_x = (texcoords[0].x * gamma3) + (texcoords[1].x * gamma1) + (texcoords[2].x * gamma2);
                 real32 t_y = (texcoords[0].y * gamma3) + (texcoords[1].y * gamma1) + (texcoords[2].y * gamma2);
@@ -260,8 +253,9 @@ void draw_triangle_wireframe(Drawing_Buffer *buffer, iVector2 A, iVector2 B, iVe
 }
 
 // I think I can do simd???
-void turn_vertex_into_screen_space(ModelVertex world_space,
-                                   int32 window_width, int32 window_height)
+void project_viewport(fVector3 world_space[3],
+                      int32 window_width,
+                      int32 window_height)
 {
     world_space[0].x = ((1.0 + world_space[0].x) * (window_width - 1)  / 2);
     world_space[0].y = ((1.0 + world_space[0].y) * (window_height - 1)  / 2);
@@ -273,7 +267,31 @@ void turn_vertex_into_screen_space(ModelVertex world_space,
     world_space[2].y = ((1.0 + world_space[2].y) * (window_height - 1)  / 2);
 }
 
-void draw_model(Drawing_Buffer *buffer, Model *model, Texture *texture) {
+void draw_filled_rectangle(Drawing_Buffer *buffer, fVector3 position, fVector3 size, Color color) {
+    uint32 *buf = _CUR_BUF(buffer);
+
+    int32 x0, y0, x1, y1;
+    x0 = (int32)floor(position.x);
+    x1 = (int32)ceil(position.x + size.x);
+
+    y0 = (int32)floor(position.y);
+    y1 = (int32)ceil(position.y + size.y);
+
+    if (x0 < 0 || y0 < 0) return;
+    if (x1 > buffer->window_width || y1 > buffer->window_height) return;
+
+    for (int32 y = y0; y < y1; ++y) {
+        for (int32 x = x0; x < x1; ++x) {
+            int32 position = (y * buffer->window_width) + x;
+            uint32 current_color = buf[position];
+            Color c = Color::from_uint32_argb(current_color);
+            c = color.blend(c);
+            buf[position] = c.to_uint32_argb();
+        }
+    }
+}
+
+void draw_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Texture *texture) {
     PROFILE_FUNC_START;
     fVector3 light_pos = fVec3(0.0, 0.0, -10.0);
     fVector3 AB, AC;
@@ -289,9 +307,10 @@ void draw_model(Drawing_Buffer *buffer, Model *model, Texture *texture) {
         bool32 tex_loaded  = load_model_texcoords(model, i, texcoords);
 
         if (vert_loaded && tex_loaded) {
-            project_perspective(NULL, &vertices[0], 90, aspect_ratio, 0.0, 100.0);
-            project_perspective(NULL, &vertices[1], 90, aspect_ratio, 0.0, 100.0);
-            project_perspective(NULL, &vertices[2], 90, aspect_ratio, 0.0, 100.0);
+            for (int i = 0; i < 3; ++i) {
+                project_view(camera, &vertices[i]);
+                project_perspective(camera, &vertices[i]);
+            }
 
             AB = fsub_fv3(vertices[1], vertices[0]);
             AC = fsub_fv3(vertices[2], vertices[0]);
@@ -303,8 +322,8 @@ void draw_model(Drawing_Buffer *buffer, Model *model, Texture *texture) {
             }
 
             if (color_intensity < 0) continue;
-            turn_vertex_into_screen_space(vertices, buffer->window_width,
-                                                    buffer->window_height);
+            project_viewport(vertices, buffer->window_width,
+                                       buffer->window_height);
 
             draw_triangle_with_texture(buffer, texture, texcoords, color_intensity,
                                        vertices[0], vertices[1], vertices[2]);
@@ -341,7 +360,6 @@ void draw_model_wireframe(Drawing_Buffer *buffer, Model *model, Color color) {
     }
 }
 
-
 typedef struct DEBUGCharacterBitmap {
     uint8 *allocated;
     int32 width, height, x_off, y_off;
@@ -351,9 +369,8 @@ typedef struct DEBUGCharacterBitmap {
 global_variable DEBUGCharacterBitmap bitmap_array[BITMAP_ARRAY_SIZE] = {0}; // THIS IS TOO STUPID
 
 void draw_text(Drawing_Buffer *buffer, FontData *font, int32 start_x, int32 start_y, char *text) {
-
     int32 x = start_x;
-    int32 y = start_y;
+    int32 y = start_y + (font->base_line + font->line_gap);
     uint32 *buf = _CUR_BUF(buffer);
 
     for (char *t = text; *t; ++t) {
@@ -397,13 +414,33 @@ void draw_text(Drawing_Buffer *buffer, FontData *font, int32 start_x, int32 star
     }
 }
 
-void project_perspective(Camera *cam, fVector3 *target, real32 fov, real32 aspect_ratio, real32 z_near, real32 z_far) {
+void project_perspective(Camera *cam, fVector3 *target) {
+    /* apply projection for left-handed y-up perspective. */
+    fVector3 copy  = *target;
+    real32 tan_fov = tanf(cam->fov / 2.0);
 
-    fVector3 copy = *target;
-
-    real32 tan_fov = tanf(fov / 2.0);
-
-    target->x = copy.x / (aspect_ratio * tan_fov);
+    target->x = copy.x / (cam->aspect_ratio * tan_fov);
     target->y = copy.y / tan_fov;
-    target->z = copy.z * -((z_near + z_far) / (z_near - z_far)) - ((2 * z_far * z_near) / (z_far - z_near));
+    target->z = copy.z * -((cam->z_near + cam->z_far) / (cam->z_near - cam->z_far))
+                         - ((2 * cam->z_far * cam->z_near) / (cam->z_far - cam->z_near));
+}
+
+void project_view(Camera *cam, fVector3 *target) {
+    /*
+     * apply lookat view perspective based on camera.
+     * 注意: 毎回方向ベクターを計算するのは無駄かも知れない。
+     * */
+
+    fVector3 copy  = *target;
+    fVector3 direction, right, up;
+
+    fVector3 looking_at = fadd_fv3(cam->position, cam->target);
+
+    direction = fnormalize_fv3(fsub_fv3(looking_at, cam->position));
+    right     = fnormalize_fv3(fcross_fv3(cam->up, direction));
+    up        = fnormalize_fv3(fcross_fv3(direction, right));
+
+    target->x = ((copy.x * right.x) + (copy.y * right.y) + (copy.z * right.z)) - fdot_fv3(right, cam->position);
+    target->y = ((copy.x * up.x) + (copy.y * up.y) + (copy.z * up.z)) - fdot_fv3(up, cam->position);
+    target->z = ((copy.x * direction.x) + (copy.y * direction.y) + (copy.z * direction.z)) - fdot_fv3(direction, cam->position);
 }

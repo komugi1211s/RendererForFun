@@ -14,7 +14,6 @@
 #include "general.h"
 #include "3rdparty.h"
 #include "profile.c"
-
 #include "maths.c"
 #include "model.c"
 #include "renderer.c"
@@ -280,7 +279,6 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
                 real64 fps = (real64)time_frequency / (real64)time_elapsed;
                 memset(string_message_temp_buffer, 0,
                         string_message_temp_buffer_size);
-
                 snprintf(string_message_temp_buffer,
                         string_message_temp_buffer_size,
                         "MpF: %lf MpF, FPS: %lf, Cycle: %llu \n", ms_per_frame, fps, cycle_elapsed);

@@ -2,6 +2,12 @@
 #ifndef _K_PROFILE_H
 #define _K_PROFILE_H
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#else
+#include <x86intrin.h>
+#endif
+
 #define PROFILE(name) for(int i##__LINE__ = (profile_begin(name), 0); i##__LINE__ < 1; i##__LINE__ = (profile_end(name), 1))
 #define PROFILE_INFO_MAX_SIZE 255
 

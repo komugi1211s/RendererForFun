@@ -3,6 +3,13 @@
 
 #include <emmintrin.h> // SSE2 SIMD.
 
+
+#define MATHS_PI 3.14159265358979323846
+
+#define MATHS_MIN(a, b) (((a) > (b)) ? (b) : (a))
+#define MATHS_MAX(a, b) (((a) < (b)) ? (b) : (a))
+#define MATHS_DEG2RAD(a) ((a) * (MATHS_PI/180));
+
 typedef struct iVector2 {
     int32 x, y;
     int32 __pad, __pad2;
@@ -56,9 +63,6 @@ fVec3(real32 x, real32 y, real32 z) {
 
     return result;
 }
-
-#define MATHS_MIN(a, b) ((a > b) ? b : a)
-#define MATHS_MAX(a, b) ((a < b) ? b : a)
 
 internal inline BoundingBoxi2
 BB_iV2_Line(iVector2 one, iVector2 two) {

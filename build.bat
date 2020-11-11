@@ -9,5 +9,5 @@ set LIBPATH=/LIBPATH:"W:\CppProject\CppLib\CImgui\lib"
 set LINKS=user32.lib shell32.lib gdi32.lib cimgui.lib
 set LINKOPTION=/INCREMENTAL:NO /pdb:"dist/main.pdb" /out:"dist/main.exe" /PROFILE
 
-cl.exe %COMPOPTION% %INCLUDES% src/main_win32.c /link %LINKOPTION% %LIBPATH% %LINKS% 
+cl.exe %COMPOPTION% %INCLUDES% src/main_win32.cpp /link %LINKOPTION% %LIBPATH% %LINKS% 
 

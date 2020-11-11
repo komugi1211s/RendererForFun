@@ -6,6 +6,7 @@
 
 #define internal        static
 #define global_variable static
+#define local_persist   static
 
 typedef uint32_t  bool32;
 typedef int8_t    int8;
