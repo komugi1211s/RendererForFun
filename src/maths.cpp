@@ -19,6 +19,7 @@ fdot_fv3(fVector3 A, fVector3 B) {
 
 fVector3 fnormalize_fv3(fVector3 A) {
     real32 distance = sqrtf((A.x * A.x) + (A.y * A.y) + (A.z * A.z));
+
     if (distance == 0) {
         A.x = 0;
         A.y = 0;

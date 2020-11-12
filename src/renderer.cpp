@@ -180,8 +180,11 @@ void draw_filled_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVecto
 }
 
 // draw_filled_triangleとほとんど同じ
-void draw_triangle_with_texture(Drawing_Buffer *buffer, Texture *texture, fVector3 texcoords[3],
-                                real32 light_intensity, fVector3 A, fVector3 B, fVector3 C) 
+void draw_textured_triangle(Drawing_Buffer *buffer,
+                            fVector3 A, fVector3 B, fVector3 C,
+                            fVector3 texcoords[3],
+                            real32 light_intensity,
+                            Texture *texture)
 {
     PROFILE_FUNC
     uint32 *buf = _CUR_BUF(buffer);
@@ -202,6 +205,9 @@ void draw_triangle_with_texture(Drawing_Buffer *buffer, Texture *texture, fVecto
         int32 y_max = (int32)ceil(bd_box.max_v.y);
         int32 x_min = (int32)floor(bd_box.min_v.x);
         int32 x_max = (int32)ceil(bd_box.max_v.x);
+        if (y_min < 0 || buffer->window_height < y_max || x_min < 0 || buffer->window_width < x_max) {
+            return;
+        }
 
         for(int32 y = y_min; y < y_max; ++y) {
             PA.y = y - A.y;
@@ -240,7 +246,7 @@ void draw_triangle_with_texture(Drawing_Buffer *buffer, Texture *texture, fVecto
 
                 if (buffer->z_buffer[position] < z_value) {
                     buffer->z_buffer[position] = z_value;
-                    buf[position] = (uint32)(255 << 24 | r << 16 | g << 8 | b);
+                    buf[position] = (uint32) (r << 16 | g << 8 | b);
                 }
             }
         }
@@ -258,25 +264,14 @@ void project_viewport(fVector3 world_space[3],
                       int32 window_width,
                       int32 window_height)
 {
-    world_space[0].x = ((1.0 + world_space[0].x) * (window_width - 1)  / 2);
-    world_space[0].y = ((1.0 + world_space[0].y) * (window_height - 1)  / 2);
-
-    world_space[1].x = ((1.0 + world_space[1].x) * (window_width - 1)  / 2);
-    world_space[1].y = ((1.0 + world_space[1].y) * (window_height - 1)  / 2);
-
-    world_space[2].x = ((1.0 + world_space[2].x) * (window_width - 1)  / 2);
-    world_space[2].y = ((1.0 + world_space[2].y) * (window_height - 1)  / 2);
+    for (int i = 0; i < 3; ++i) {
+        world_space[i].x = ((1.0 + world_space[i].x) * 0.5) * window_width;
+        world_space[i].y = ((1.0 + world_space[i].y) * 0.5) * window_height;
+    }
 }
 
-void draw_filled_rectangle(Drawing_Buffer *buffer, fVector3 position, fVector3 size, Color color) {
+void draw_filled_rectangle(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, Color color) {
     uint32 *buf = _CUR_BUF(buffer);
-
-    int32 x0, y0, x1, y1;
-    x0 = (int32)floor(position.x);
-    x1 = (int32)ceil(position.x + size.x);
-
-    y0 = (int32)floor(position.y);
-    y1 = (int32)ceil(position.y + size.y);
 
     if (x0 < 0 || y0 < 0) return;
     if (x1 > buffer->window_width || y1 > buffer->window_height) return;
@@ -291,28 +286,31 @@ void draw_filled_rectangle(Drawing_Buffer *buffer, fVector3 position, fVector3 s
         }
     }
 }
-
-void project_perspective(Camera *cam, fVector3 *target);
-void project_view(Camera *cam, fVector3 *target);
-void draw_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Texture *texture) {
+void draw_textured_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Texture *texture) {
     PROFILE_FUNC
     fVector3 light_pos = fVec3(0.0, 0.0, -10.0);
     fVector3 AB, AC;
     fVector3 surface_normal, light_normal;
-    real32 color_intensity;
-
-    fVector3 vertices[3]  = {0};
-    fVector3 texcoords[3] = {0};
-
+    real32 light_intensity;
+    fMat4x4 mvp = create_mvp_matrix(camera);
     real32 aspect_ratio = 16.0 / 9.0;
     for (size_t i = 0; i < model->num_indexes; ++i) {
+        fVector3 vertices[3]  = {0};
+        fVector3 texcoords[3] = {0};
         bool32 vert_loaded = load_model_vertices(model, i, vertices);
         bool32 tex_loaded  = load_model_texcoords(model, i, texcoords);
 
         if (vert_loaded && tex_loaded) {
-            for (int i = 0; i < 3; ++i) {
-                project_view(camera, &vertices[i]);
-                project_perspective(camera, &vertices[i]);
+            for (int v = 0; v < 3; ++v) {
+                fVector4 fv4vert;
+                fv4vert.x = vertices[v].x;
+                fv4vert.y = vertices[v].y;
+                fv4vert.z = vertices[v].z;
+                fv4vert.w = 1.0;
+                fv4vert = fmul_fmat4x4_fv4(mvp, fv4vert);
+                vertices[v].x = fv4vert.x / fv4vert.w;
+                vertices[v].y = fv4vert.y / fv4vert.w;
+                vertices[v].z = fv4vert.z;
             }
 
             AB = fsub_fv3(vertices[1], vertices[0]);
@@ -320,14 +318,15 @@ void draw_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Texture *t
 
             surface_normal  = fnormalize_fv3(fcross_fv3_simd(AC, AB));
             light_normal    = fnormalize_fv3(light_pos);
-            color_intensity = fdot_fv3(light_normal, surface_normal);
+            light_intensity = fdot_fv3(light_normal, surface_normal);
 
-            if (color_intensity < 0) continue;
+            if (light_intensity < 0) continue;
             project_viewport(vertices, buffer->window_width,
                                        buffer->window_height);
+            draw_textured_triangle(buffer,    vertices[0], vertices[1], vertices[2],
+                                   texcoords, light_intensity, texture);
 
-            draw_triangle_with_texture(buffer, texture, texcoords, color_intensity,
-                                       vertices[0], vertices[1], vertices[2]);
+clipped_by_w_buffer:;
         }
     }
 }
@@ -415,78 +414,40 @@ void draw_text(Drawing_Buffer *buffer, FontData *font, int32 start_x, int32 star
     }
 }
 
-int32 get_text_width(FontData *font, char *text) {
-    int32 x = 0;
-    for(char *t = text; *t; ++t) {
-        char character = *t;
-        int32 advance, lsb;
-        stbtt_GetCodepointHMetrics(&font->font_info, character, &advance, &lsb);
-        x += (advance + lsb) * font->char_scale;
-    }
-    return x;
-}
+fMat4x4 create_mvp_matrix(Camera *cam) {
+    /*
+     * ModelViewProjectionマトリックスを作る（現状はModel == Identity なので実質VP）
+     * */
 
-void project_perspective(Camera *cam, fVector3 *target) {
-    /* apply projection for left-handed y-up perspective. */
-    fVector4 copied;
-    copied.x = target->x;
-    copied.y = target->y;
-    copied.z = target->z;
-    copied.w = 1.0;
+    fVector3 z, x, y;
+    z = fnormalize_fv3(cam->target);
+    x = fnormalize_fv3(fcross_fv3(cam->up, z));
+    y = fnormalize_fv3(fcross_fv3(z, x));
+
+    fMat4x4 lookat = fMat4Identity();
+    lookat.row[0].col[0] = x.x;
+    lookat.row[0].col[1] = x.y;
+    lookat.row[0].col[2] = x.z;
+    lookat.row[0].col[3] = -fdot_fv3(x, cam->position);
+
+    lookat.row[1].col[0] = y.x;
+    lookat.row[1].col[1] = y.y;
+    lookat.row[1].col[2] = y.z;
+    lookat.row[1].col[3] = -fdot_fv3(y, cam->position);
+
+    lookat.row[2].col[0] = z.x;
+    lookat.row[2].col[1] = z.y;
+    lookat.row[2].col[2] = z.z;
+    lookat.row[2].col[3] = -fdot_fv3(z, cam->position);
 
     real32 tan_fov = tanf(cam->fov / 2.0);
     fMat4x4 proj = {0};
 
     proj.row[0].col[0] = 1.0f / (cam->aspect_ratio * tan_fov);
     proj.row[1].col[1] = 1.0f / tan_fov;
-    proj.row[2].col[2] = (cam->z_near + cam->z_far) / (cam->z_far - cam->z_near);
+    proj.row[2].col[2] = -(cam->z_near + cam->z_far) / (cam->z_far - cam->z_near);
     proj.row[2].col[3] = -(2.0 * cam->z_far * cam->z_near) / (cam->z_far - cam->z_near);
     proj.row[3].col[2] = -1.0f;
 
-    copied = fmul_fmat4x4_fv4(proj, copied);
-    target->x = copied.x;
-    target->y = copied.y;
-    target->z = copied.z;
-}
-
-void project_view(Camera *cam, fVector3 *target) {
-    /*
-     * apply lookat view based on camera.
-     * 注意: 毎回方向ベクターを計算するのは無駄かも知れない。
-     * */
-
-    fVector4 copied;
-    copied.x = target->x;
-    copied.y = target->y;
-    copied.z = target->z;
-    copied.w = 1.0;
-
-    fVector3 direction, right, up;
-    fVector3 looking_at = fadd_fv3(cam->position, cam->target);
-    direction = fnormalize_fv3(fsub_fv3(looking_at, cam->position));
-    right     = fnormalize_fv3(fcross_fv3(cam->up, direction));
-    up        = fnormalize_fv3(fcross_fv3(direction, right));
-
-    fMat4x4 lookat = {0};
-    lookat.row[0].col[0] = right.x;
-    lookat.row[0].col[1] = right.y;
-    lookat.row[0].col[2] = right.z;
-
-    lookat.row[1].col[0] = up.x;
-    lookat.row[1].col[1] = up.y;
-    lookat.row[1].col[2] = up.z;
-
-    lookat.row[2].col[0] = direction.x;
-    lookat.row[2].col[1] = direction.y;
-    lookat.row[2].col[2] = direction.z;
-
-    lookat.row[0].col[3] = -fdot_fv3(right,     cam->position);
-    lookat.row[1].col[3] = -fdot_fv3(up,        cam->position);
-    lookat.row[2].col[3] = -fdot_fv3(direction, cam->position);
-    lookat.row[3].col[3] = 1.0;
-
-    copied = fmul_fmat4x4_fv4(lookat, copied);
-    target->x = copied.x;
-    target->y = copied.y;
-    target->z = copied.z;
+    return fmul_fmat4x4(proj, lookat);
 }

@@ -17,51 +17,21 @@
 #include "maths.cpp"
 #include "model.cpp"
 #include "renderer.cpp"
+#include "imm.cpp"
 
 global_variable Atom wm_protocols;
 global_variable Atom wm_delete_window;
-
-typedef struct Input {
-    bool32 forward, backward, left, right;
-    bool32 debug_menu;
-    real32 current_mouse_x, current_mouse_y;
-    real32 prev_mouse_x,    prev_mouse_y;
-} Input;
-
-typedef struct UI_Layout {
-    FontData *data;
-    int32 x, y;
-
-    UI_Layout(FontData *d, int32 x0, int32 y0)
-    : data(d), x(x0), y(y0) {}
-
-    void category(Drawing_Buffer *buffer, char *name) {
-        draw_text(buffer, data, x, y, name);
-        y += 20;
-        x += 40;
-    }
-
-    void category_end() {
-        x -= 40;
-    }
-
-    void text(Drawing_Buffer *buffer, char *text) {
-        draw_text(buffer, data, x, y, text);
-        y += 20;
-    }
-} UI_Layout;
-
 
 void update_camera_with_input(Camera *camera, Input *input, real32 dt) {
     if (!(input->forward && input->backward)) {
         fVector3 move_towards = fmul_fv3_fscalar(camera->target, 2.0 * dt);
 
         if (input->forward) {
-            camera->position = fadd_fv3(camera->position, move_towards);
+            camera->position = fsub_fv3(camera->position, move_towards);
         }
 
         if (input->backward) {
-            camera->position = fsub_fv3(camera->position, move_towards);
+            camera->position = fadd_fv3(camera->position, move_towards);
         }
     }
 
@@ -78,11 +48,12 @@ void update_camera_with_input(Camera *camera, Input *input, real32 dt) {
     }
 
     real32 dx, dy;
-    dx = input->current_mouse_x - input->prev_mouse_x;
-    dy = input->current_mouse_y - input->prev_mouse_y;
+    dx = input->mouse.x - input->prev_mouse.x;
+    dy = input->mouse.y - input->prev_mouse.y;
 
-    camera->yaw   += dx;
-    camera->pitch -= dy;
+    real32 sensitivity = 100.0 * dt;
+    camera->yaw   += (dx * sensitivity);
+    camera->pitch -= (dy * sensitivity);
 
     camera->pitch = MATHS_MAX(-89.0, MATHS_MIN(89.0, camera->pitch));
 
@@ -96,7 +67,7 @@ void update_camera_with_input(Camera *camera, Input *input, real32 dt) {
     camera->target = fnormalize_fv3(camera->target);
 }
 
-void update_xwindow_with_drawbuffer(Display *display, Window window, GC context, XColor *bg_color, Drawing_Buffer *buffer) {
+void update_xwindow_with_drawbuffer(Display *display, Window window, GC context, Drawing_Buffer *buffer) {
     uint32 *drawing_buffer = buffer->is_drawing_first ? buffer->first_buffer : buffer->second_buffer;
 
     XImage image;
@@ -194,7 +165,7 @@ char *format(const char * __restrict message, ...) {
 
     va_list list;
     va_start(list, message);
-    vsnprintf(bucket, EACH_STRING_SIZE,
+    vsnprintf(bucket,  EACH_STRING_SIZE,
               message, list);
     va_end(list);
 
@@ -202,28 +173,28 @@ char *format(const char * __restrict message, ...) {
 }
 
 void draw_debug_menu(Drawing_Buffer *buffer, Input *input, FontData *font_data, Camera *camera, Model *model, real32 ms_per_frame, real32 fps, uint64 cycle_elapsed) {
-    Color box_color = rgba(0.5, 0.5, 0.5, 0.2);
-    draw_filled_rectangle(buffer, fVec3(10.0, 10.0, 0.0), fVec3(600.0, 300.0, 0.0), box_color);
-    UI_Layout layout(font_data, 10, 10);
+    Color box_color = rgba(0.1, 0.1, 0.1, 0.2);
+    draw_filled_rectangle(buffer, 10, 50, 600, 300, box_color);
 
-    layout.category(buffer, (char *)"Perf: ");
-    layout.text(buffer, format("MpF: %lf MpF, FPS: %lf, Cycle: %lu \n", ms_per_frame, fps, cycle_elapsed));
+    int32 x = 20;
+    int32 y = 60;
     for (int32 i = 0; i < profile_info_count; ++i) {
         if (!profile_info[i].is_started) {
-            layout.text(buffer, format("[%3d]%s, Cycle: %lu", i, profile_info[i].name, profile_info[i].cycle_elapsed));
+            draw_text(buffer, font_data, x, y, format("[%d] %s | %lu cy", i, profile_info[i].name, profile_info[i].cycle_elapsed));
+            y += 20;
         }
     }
-    layout.category_end();
-
-    layout.category(buffer, (char *)"Camera: ");
-    layout.text(buffer, format("Pitch: [%f], Yaw: [%f]", camera->pitch, camera->yaw));
-    layout.category_end();
-
-    layout.category(buffer, (char *)"Model: ");
-    layout.text(buffer, format("Vertex   count: [%lu]", model->num_vertices));
-    layout.text(buffer, format("Texcoord count: [%lu]", model->num_texcoords));
-    layout.text(buffer, format("Index    count: [%lu]", model->num_indexes));
-    layout.category_end();
+    y += 10;
+    draw_text(buffer, font_data, x, y, (char *)"Camera");
+    x += 40;
+    y += 20;
+    draw_text(buffer, font_data, x, y, format("Position: [%2f, %2f, %2f]", camera->position.x, camera->position.y, camera->position.z));
+    y += 20;
+    draw_text(buffer, font_data, x, y, format("LookAt:   [%2f, %2f, %2f]", camera->target.x, camera->target.y, camera->target.z));
+    y += 20;
+    draw_text(buffer, font_data, x, y, format("Yaw, Pitch: [%2f, %2f]", camera->yaw, camera->pitch));
+    y += 20;
+    x -= 40;
 }
 
 
@@ -251,7 +222,7 @@ int main(int argc, char **argv) {
             window_attr.colormap = XCreateColormap(display, desktop_window,
                                                    vis_info.visual, AllocNone);
 
-            window_attr.event_mask = StructureNotifyMask | ExposureMask | KeyPressMask | KeyReleaseMask | PointerMotionMask;
+            window_attr.event_mask = StructureNotifyMask | ExposureMask | KeyPressMask | KeyReleaseMask | PointerMotionMask | ButtonPressMask | ButtonReleaseMask;
             uint64 attr_mask = CWBackPixel | CWColormap | CWEventMask;
             TRACE("Visual info Depth: %d", vis_info.depth);
 
@@ -273,13 +244,6 @@ int main(int argc, char **argv) {
                     XSetWMNormalHints(display, my_window, &hint);
                 }
                 GC context = XCreateGC(display, my_window, 0, 0);
-                XColor approx_bg_color, true_bg_color;
-
-                Colormap colormap = DefaultColormap(display, default_screen);
-                if (!XAllocNamedColor(display, colormap, "black", &approx_bg_color, &true_bg_color)) {
-                    TRACE("Failed to Allocate Color.");
-                    BREAK
-                }
 
                 XMapWindow(display, my_window);
                 XFlush(display);
@@ -292,6 +256,13 @@ int main(int argc, char **argv) {
                     TRACE("STB FONT LOAD FAILED.");
                     return 0;
                 }
+
+                ImmStyle default_style;
+                default_style.bg_color = rgba(0.25, 0.25, 0.25, 0.5);
+                default_style.hot_color = rgba(0.50, 0.0, 0.0, 0.5);
+                default_style.active_color = rgba(0.0, 0.5, 0.0, 0.5);
+
+                imm_set_style(default_style);
 
                 Model model = {0};
                 if (!load_simple_model("african_head.obj", &model)) {
@@ -322,15 +293,14 @@ int main(int argc, char **argv) {
                 Input input = {0};
 
                 Camera camera = {0};
-                camera.position = fVec3(0.0, 0.0, -1.0);
+                camera.position = fVec3(0.0, 0.0, 2.0);
                 camera.target   = fVec3(0.0, 0.0, 1.0);
                 camera.up       = fVec3(0.0, 1.0, 0.0);
-
-                camera.fov = 90.0f;
+                camera.fov = 80.0f;
                 camera.aspect_ratio = 16.0 / 9.0;
                 camera.z_far = 10000.0;
-                camera.z_near = -100.0;
-                camera.pitch = -90.0f;
+                camera.z_near = 0.0;
+                camera.yaw = 90.0f;
 
                 // MEMO: yanked this value from SDL_GetPerformanceFrequency.
                 // SDL_GetPerformanceFrequency returns 1000000000 if you can use CLOCK_MONOTONIC_RAW.
@@ -347,6 +317,8 @@ int main(int argc, char **argv) {
                 Color bg = rgb_opaque(0.0, 0.2, 0.2);
 
                 bool32 running = 1;
+
+                bool32 wireframe_on = 0;
                 while (running) {
                     clear_buffer(&buffer, bg);
 
@@ -356,7 +328,6 @@ int main(int argc, char **argv) {
 
                     XEvent event = {};
                     while(XPending(display) > 0) {
-                        TRACE("Getting Event.");
                         XNextEvent(display, &event);
                         switch(event.type) {
                             case Expose:
@@ -393,7 +364,7 @@ int main(int argc, char **argv) {
                                         input.forward = pressed;
                                         break;
                                     case XK_F1:
-                                        if(pressed) input.debug_menu = !input.debug_menu;
+                                        if(pressed) input.debug_menu_key = !input.debug_menu_key;
                                         break;
                                     default:
                                         break;
@@ -403,8 +374,17 @@ int main(int argc, char **argv) {
                             case MotionNotify:
                             {
                                 XPointerMovedEvent *ev = (XPointerMovedEvent *)&event;
-                                input.current_mouse_x = ev->x;
-                                input.current_mouse_y = ev->y;
+                                input.mouse.x = ev->x;
+                                input.mouse.y = ev->y;
+                            } break;
+
+                            case ButtonPress:
+                            case ButtonRelease:
+                            {
+                                XButtonEvent *ev = (XButtonEvent *)&event;
+                                if (ev->button == 1) {
+                                    input.mouse.left = event.type == ButtonPress;
+                                }
                             } break;
 
                             case ClientMessage:
@@ -421,19 +401,46 @@ int main(int argc, char **argv) {
                     Color c = rgb_opaque(1.0, 1.0, 1.0);
 
                     update_camera_with_input(&camera, &input, 0.016);
-                    draw_model(&buffer, &model, &camera, &texture);
+                    draw_textured_model(&buffer, &model, &camera, &texture);
 
-                    if (input.debug_menu) {
+                    if (input.debug_menu_key) {
                         draw_debug_menu(&buffer, &input, &font_data, &camera, &model,
                                         ms_per_frame, fps, cycle_elapsed);
+                        imm_begin(&font_data, &input);
+                        imm_draw_top_bar(&buffer, buffer.window_width, 30);
+
+                        int32 topbar_y_size = 30;
+                        int32 current_x = 0;
+                        int32 min_width = 120;
+                        int32 actual_width = 0;
+                        {
+                            char *name = (char *)"Reset Camera";
+                            if(imm_draw_text_button(&buffer, current_x, 0, min_width, topbar_y_size, name, &actual_width)) {
+                                camera.position = fVec3(0.0, 0.0, 2.0);
+                                camera.target   = fVec3(0.0, 0.0, 1.0);
+                                camera.up       = fVec3(0.0, 1.0, 0.0);
+                                camera.fov = 90.0f;
+                                camera.aspect_ratio = 16.0 / 9.0;
+                                camera.z_far = 10000.0;
+                                camera.z_near = 0.0;
+                                camera.yaw = 90.0f;
+                            }
+                            current_x += actual_width;
+                        }
+                        {
+                            char *name = (char *)"Wireframe";
+                            if(imm_draw_text_button(&buffer, current_x, 0, min_width, topbar_y_size, name, &actual_width)) {
+                                wireframe_on = !wireframe_on;
+                            }
+                            current_x += actual_width;
+                        }
+
+                        imm_end();
                     }
-
-
-                    update_xwindow_with_drawbuffer(display, my_window, context, &approx_bg_color, &buffer);
+                    update_xwindow_with_drawbuffer(display, my_window, context, &buffer);
                     swap_buffer(&buffer);
 
-                    input.prev_mouse_x = input.current_mouse_x;
-                    input.prev_mouse_y = input.current_mouse_y;
+                    input.prev_mouse = input.mouse;
 
                     clock_gettime(CLOCK_MONOTONIC_RAW, &_timespec_now);
                     uint64 end_time = (_timespec_now.tv_sec * time_frequency) + _timespec_now.tv_nsec;
