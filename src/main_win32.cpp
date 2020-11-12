@@ -19,38 +19,7 @@
 #include "maths.cpp"
 #include "model.cpp"
 #include "renderer.cpp"
-
-typedef struct Input {
-    bool32 forward, backward, left, right;
-    bool32 debug_menu;
-    real32 current_mouse_x, current_mouse_y;
-    real32 prev_mouse_x,    prev_mouse_y;
-
-    bool32 left_click, right_click;
-} Input;
-
-typedef struct UI_Layout {
-    FontData *data;
-    int32 x, y;
-
-    UI_Layout(FontData *d, int32 x0, int32 y0)
-    : data(d), x(x0), y(y0) {}
-
-    void category(Drawing_Buffer *buffer, char *name) {
-        draw_text(buffer, data, x, y, name);
-        y += 20;
-        x += 40;
-    }
-
-    void category_end() {
-        x -= 40;
-    }
-
-    void text(Drawing_Buffer *buffer, char *text) {
-        draw_text(buffer, data, x, y, text);
-        y += 20;
-    }
-} UI_Layout;
+#include "imm.cpp"
 
 global_variable bool32         running = 1;
 global_variable BITMAPINFO     bitmap_info;
@@ -88,12 +57,12 @@ LRESULT CALLBACK my_window_proc(HWND handle, uint32 message, WPARAM wparam, LPAR
         case WM_LBUTTONDOWN:
         case WM_LBUTTONDBLCLK:
         {
-            input.left_click = 1;
+            input.mouse.left = 1;
         } break;
 
         case WM_LBUTTONUP:
         {
-            input.left_click = 0;
+            input.mouse.left = 0;
         } break;
 
         case WM_CLOSE:
@@ -106,9 +75,9 @@ LRESULT CALLBACK my_window_proc(HWND handle, uint32 message, WPARAM wparam, LPAR
         {
             real32 x_pos = (real32)GET_X_LPARAM(lparam);
             real32 y_pos = (real32)GET_Y_LPARAM(lparam);
-
-            input.current_mouse_x = x_pos;
-            input.current_mouse_y = y_pos;
+            
+            input.mouse.x = x_pos;
+            input.mouse.y = y_pos;
         } break;
         case WM_KEYUP:
         case WM_KEYDOWN:
@@ -116,7 +85,7 @@ LRESULT CALLBACK my_window_proc(HWND handle, uint32 message, WPARAM wparam, LPAR
             bool32 key_pressed = message == WM_KEYDOWN;
             switch(wparam) {
                 case VK_F1:
-                    if (key_pressed) input.debug_menu = !input.debug_menu;
+                    if (key_pressed) input.debug_menu_key = !input.debug_menu_key;
                     break;
 
                 case 'W':
@@ -252,11 +221,11 @@ void update_camera_with_input(Camera *camera, Input *input, real32 dt) {
         fVector3 move_towards = fmul_fv3_fscalar(camera->target, 2.0 * dt);
 
         if (input->forward) {
-            camera->position = fadd_fv3(camera->position, move_towards);
+            camera->position = fsub_fv3(camera->position, move_towards);
         }
 
         if (input->backward) {
-            camera->position = fsub_fv3(camera->position, move_towards);
+            camera->position = fadd_fv3(camera->position, move_towards);
         }
     }
 
@@ -272,13 +241,14 @@ void update_camera_with_input(Camera *camera, Input *input, real32 dt) {
         }
     }
 
-    if (!input->debug_menu) {
+    if (!input->debug_menu_key) {
         real32 dx, dy;
-        dx = input->current_mouse_x - input->prev_mouse_x;
-        dy = input->current_mouse_y - input->prev_mouse_y;
+        dx = input->mouse.x - input->prev_mouse.x;
+        dy = input->mouse.y - input->prev_mouse.y;
 
-        camera->yaw   += (dx * 0.5);
-        camera->pitch -= (dy * 0.5);
+        real32 sensitivity = 100.0 * dt;
+        camera->yaw   += (dx * sensitivity);
+        camera->pitch -= (dy * sensitivity);
 
         camera->pitch = MATHS_MAX(-89.0, MATHS_MIN(89.0, camera->pitch));
 
@@ -294,65 +264,28 @@ void update_camera_with_input(Camera *camera, Input *input, real32 dt) {
 }
 
 void draw_debug_menu(Drawing_Buffer *buffer, Input *input, FontData *font_data, Camera *camera, Model *model, real32 ms_per_frame, real32 fps, uint64 cycle_elapsed) {
-    real32 y0 = 0.0;
-    real32 top_bar_y = 30.0;
+    Color box_color = rgba(0.1, 0.1, 0.1, 0.2);
+    draw_filled_rectangle(buffer, 10, 50, 600, 300, box_color);
 
-    Color box_color = rgba(0.3, 0.3, 0.3, 0.2);
-    Color box_color_selected = rgba(0.0, 1.0, 1.0, 1.0);
-    draw_filled_rectangle(buffer, fVec3(0.0, 0.0, 0.0), fVec3(buffer->window_width-1, top_bar_y, 0.0), box_color);
-
-    real32 x_button_size = 200.0;
-    int32 button_margin = 5.0;
-
-    if (input->current_mouse_y > 0.0 && input->current_mouse_y < top_bar_y) {
-        if (input->current_mouse_x > 0.0 && input->current_mouse_x < x_button_size) {
-            if (input->left_click) {
-                input->left_click = 0;
-                camera->position = fVec3(0.0, 0.0, 0.0);
-                camera->target   = fVec3(0.0, 0.0, 1.0);
-                camera->up       = fVec3(0.0, 1.0, 0.0);
-
-                camera->pitch = 0;
-                camera->yaw = 0;
-            }
-            char *selected_title = "[ Reset Camera ]";
-            int32 text_width = get_text_width(font_data, selected_title) + button_margin + button_margin;
-            draw_filled_rectangle(buffer, fVec3((real32)button_margin, 0.0, 0.0), fVec3((real32)text_width, top_bar_y, 0.0), box_color_selected);
-            draw_text(buffer, font_data, 0.0, 1.0, selected_title);
-        } else {
-            char *selected_title = " [Reset Camera] ";
-            int32 text_width = get_text_width(font_data, selected_title) + button_margin + button_margin;
-            draw_text(buffer, font_data, 0.0, 1.0, selected_title);
-            draw_filled_rectangle(buffer, fVec3((real32)button_margin, 0.0, 0.0), fVec3((real32)text_width, top_bar_y, 0.0), box_color);
-        }
-    } else {
-        char *selected_title = " [Reset Camera] ";
-        int32 text_width = get_text_width(font_data, selected_title) + button_margin + button_margin;
-        draw_text(buffer, font_data, 0.0, 1.0, selected_title);
-        draw_filled_rectangle(buffer, fVec3((real32)button_margin, 0.0, 0.0), fVec3((real32)text_width, top_bar_y, 0.0), box_color);
-    }
-
-    y0 += top_bar_y;
-
-    UI_Layout layout(font_data, 10, y0 + 5);
-    layout.category(buffer, (char *)"Perf: ");
-    layout.text(buffer, format("MpF: %lf MpF, FPS: %lf, Cycle: %lu \n", ms_per_frame, fps, cycle_elapsed));
+    int32 x = 20;
+    int32 y = 60;
     for (int32 i = 0; i < profile_info_count; ++i) {
         if (!profile_info[i].is_started) {
-            layout.text(buffer, format("[%3d]%s, Cycle: %lu", i, profile_info[i].name, profile_info[i].cycle_elapsed));
+            draw_text(buffer, font_data, x, y, format("[%d] %s | %lu cy", i, profile_info[i].name, profile_info[i].cycle_elapsed));
+            y += 20;
         }
     }
-    layout.category_end();
-
-    layout.category(buffer, (char *)"Camera: ");
-    layout.text(buffer, format("Pitch: [%f], Yaw: [%f]", camera->pitch, camera->yaw));
-    layout.category_end();
-
-    layout.category(buffer, (char *)"Model: ");
-    layout.text(buffer, format("Vertex   count: [%lu]", model->num_vertices));
-    layout.text(buffer, format("Texcoord count: [%lu]", model->num_texcoords));
-    layout.text(buffer, format("Index    count: [%lu]", model->num_indexes));
-    layout.category_end();
+    y += 10;
+    draw_text(buffer, font_data, x, y, (char *)"Camera");
+    x += 40;
+    y += 20;
+    draw_text(buffer, font_data, x, y, format("Position: [%2f, %2f, %2f]", camera->position.x, camera->position.y, camera->position.z));
+    y += 20;
+    draw_text(buffer, font_data, x, y, format("LookAt:   [%2f, %2f, %2f]", camera->target.x, camera->target.y, camera->target.z));
+    y += 20;
+    draw_text(buffer, font_data, x, y, format("Yaw, Pitch: [%2f, %2f]", camera->yaw, camera->pitch));
+    y += 20;
+    x -= 40;
 }
 
 
@@ -407,6 +340,13 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
                 return 0;
             }
 
+            ImmStyle default_style;
+            default_style.bg_color = rgba(0.25, 0.25, 0.25, 0.5);
+            default_style.hot_color = rgba(0.50, 0.0, 0.0, 0.5);
+            default_style.active_color = rgba(0.0, 0.5, 0.0, 0.5);
+
+            imm_set_style(default_style);
+
             Color bg = rgb_opaque(0.0, 0.2, 0.2);
 
             // 一つのアロケーションに全部叩き込む
@@ -445,6 +385,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             start_cycle = __rdtsc();
 
             real32 delta_time = 0.016; // delta time 60fps
+            bool32 wireframe_on = 0;
             while(running) {
                 clear_buffer(&drawing_buffer, bg);
 
@@ -458,14 +399,43 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
                 GetClientRect(window, &client_rect);
 
                 Color color = rgb_opaque(1.0, 1.0, 1.0);
-                update_camera_with_input(&camera, &input, delta_time);
-
                 clear_buffer(&drawing_buffer, bg);
-                draw_model(&drawing_buffer, &model, &camera, &texture);
 
-                if (input.debug_menu) {
+                update_camera_with_input(&camera, &input, delta_time);
+                draw_textured_model(&drawing_buffer, &model, &camera, &texture);
+
+                if (input.debug_menu_key) {
                     draw_debug_menu(&drawing_buffer, &input, &font_data, &camera, &model,
                                     ms_per_frame, fps, cycle_elapsed);
+                    imm_begin(&font_data, &input);
+                    imm_draw_top_bar(&drawing_buffer, drawing_buffer.window_width, 30);
+                    int32 topbar_y_size = 30;
+                    int32 current_x = 0;
+                    int32 min_width = 120;
+                    int32 actual_width = 0;
+                    {
+                        char *name = (char *)"Reset Camera";
+                        if(imm_draw_text_button(&drawing_buffer, current_x, 0, min_width, topbar_y_size, name, &actual_width)) {
+                            camera.position = fVec3(0.0, 0.0, 2.0);
+                            camera.target   = fVec3(0.0, 0.0, 1.0);
+                            camera.up       = fVec3(0.0, 1.0, 0.0);
+                            camera.fov = 90.0f;
+                            camera.aspect_ratio = 16.0 / 9.0;
+                            camera.z_far = 10000.0;
+                            camera.z_near = 0.0;
+                            camera.yaw = 90.0f;
+                        }
+                        current_x += actual_width;
+                    }
+                    {
+                        char *name = (char *)"Wireframe";
+                        if(imm_draw_text_button(&drawing_buffer, current_x, 0, min_width, topbar_y_size, name, &actual_width)) {
+                            wireframe_on = !wireframe_on;
+                        }
+                        current_x += actual_width;
+                    }
+
+                    imm_end();
                 }
 
 
@@ -473,8 +443,8 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
                 swap_buffer(&drawing_buffer);
                 ReleaseDC(window, context);
 
-                input.prev_mouse_x = input.current_mouse_x;
-                input.prev_mouse_y = input.current_mouse_y;
+                input.prev_mouse = input.mouse;
+                input.prev_mouse = input.mouse;
 
                 QueryPerformanceCounter(&end_time);
                 end_cycle = __rdtsc();
