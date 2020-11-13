@@ -46,5 +46,11 @@ bool32 imm_draw_text_button(Drawing_Buffer *buffer,
                             int32 min_width, int32 height,
                             char *text, int32 *actual_width);
 
+void   imm_draw_text_slider(Drawing_Buffer *buffer,
+                            int32 x, int32 y,
+                            int32 width, int32 height,
+                            char *text,
+                            real32 min_value, real32 max_value,
+                            real32 *output_value);
 #endif // _K_IMM_H
 #endif // STB_TRUETYPE_IMPLEMENTATION

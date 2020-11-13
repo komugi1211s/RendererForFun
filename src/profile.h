@@ -26,16 +26,17 @@ void profile_begin(const char *name);
 void profile_end(const char *name);
 
 typedef struct ProfileScope {
-    const char *name;
+    char *name;
 
-    ProfileScope(const char *n): name(n) {
-        profile_begin(n);
+    ProfileScope(const char *n) {
+        name = (char *)n;
+        profile_begin(name);
     }
     ~ProfileScope() {
         profile_end(name);
     }
 } ProfileScope;
 
-#define PROFILE_FUNC          ProfileScope _profile_##__LINE__(__func__);
+#define PROFILE_FUNC          auto _profile_##__LINE__ = ProfileScope(__func__);
 
 #endif // _K_PROFILE_H

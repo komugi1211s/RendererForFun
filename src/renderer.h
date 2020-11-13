@@ -53,10 +53,10 @@ void draw_textured_model(Drawing_Buffer *buffer, Model *model, Camera *camera, T
 
 void draw_wire_rectangle(Drawing_Buffer *buffer, real32 x0, real32 y0, real32 x1, real32 y1, Color color);
 void draw_filled_rectangle(Drawing_Buffer *buffer, real32 x0, real32 y0, real32 x1, real32 y1, Color color);
+void DEBUG_render_z_buffer(Drawing_Buffer *buffer);
 
 fMat4x4 create_mvp_matrix(Camera *cam);
 
 void draw_text(Drawing_Buffer *buffer, FontData *font_data, int32 x, int32 y, char *Text);
-int32 get_text_width(FontData *font, char *text);
 
 #endif // _K_RENDERER_H

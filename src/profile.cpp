@@ -17,7 +17,7 @@ void profile_begin(const char *name) {
     size_t length = strlen(name);
     ProfileInfo *info = 0;
     for (int32 i = 0; i < profile_info_count; ++i) {
-        if (strncmp(profile_info[i].name, name, length) == 0) {
+        if (strcmp(profile_info[i].name, name) == 0) {
             info = &profile_info[i];
             break;
         }
@@ -44,8 +44,8 @@ void profile_end(const char *name) {
     ProfileInfo *info = NULL;
 
     for (int32 i = 0; i < profile_info_count; ++i) {
-        if (strncmp(profile_info[i].name, name, length) == 0) {
-            info = (profile_info + i);
+        if (strcmp(profile_info[i].name, name) == 0) {
+            info = &profile_info[i];
             break;
         }
     }

@@ -8,7 +8,7 @@
 
 #define MATHS_MIN(a, b) (((a) > (b)) ? (b) : (a))
 #define MATHS_MAX(a, b) (((a) < (b)) ? (b) : (a))
-#define MATHS_DEG2RAD(a) ((a) * (MATHS_PI/180));
+#define MATHS_DEG2RAD(a) ((a) * (MATHS_PI/180))
 
 typedef struct iVector2 {
     int32 x, y;

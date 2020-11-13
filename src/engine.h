@@ -88,5 +88,4 @@ Color rgb_opaque(real32 r, real32 g, real32 b) {
 
     return result;
 }
-
 #endif

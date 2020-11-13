@@ -179,10 +179,8 @@ void draw_debug_menu(Drawing_Buffer *buffer, Input *input, FontData *font_data, 
     int32 x = 20;
     int32 y = 60;
     for (int32 i = 0; i < profile_info_count; ++i) {
-        if (!profile_info[i].is_started) {
-            draw_text(buffer, font_data, x, y, format("[%d] %s | %lu cy", i, profile_info[i].name, profile_info[i].cycle_elapsed));
-            y += 20;
-        }
+        draw_text(buffer, font_data, x, y, format("[%d] %s | %lu cy", i, profile_info[i].name, profile_info[i].cycle_elapsed));
+        y += 20;
     }
     y += 10;
     draw_text(buffer, font_data, x, y, (char *)"Camera");
@@ -197,6 +195,17 @@ void draw_debug_menu(Drawing_Buffer *buffer, Input *input, FontData *font_data, 
     x -= 40;
 }
 
+
+void default_camera(Camera *cam) {
+    cam->position     = fVec3(0.0, 0.0, 2.0);
+    cam->target       = fVec3(0.0, 0.0, 1.0);
+    cam->up           = fVec3(0.0, 1.0, 0.0);
+    cam->fov          = 90.0f;
+    cam->aspect_ratio = 16.0 / 9.0;
+    cam->z_far        = 1000.0;
+    cam->z_near       = 0.01;
+    cam->yaw          = 90.0f;
+}
 
 int main(int argc, char **argv) {
     Display *display = XOpenDisplay(0);
@@ -293,14 +302,7 @@ int main(int argc, char **argv) {
                 Input input = {0};
 
                 Camera camera = {0};
-                camera.position = fVec3(0.0, 0.0, 2.0);
-                camera.target   = fVec3(0.0, 0.0, 1.0);
-                camera.up       = fVec3(0.0, 1.0, 0.0);
-                camera.fov = 80.0f;
-                camera.aspect_ratio = 16.0 / 9.0;
-                camera.z_far = 10000.0;
-                camera.z_near = 0.0;
-                camera.yaw = 90.0f;
+                default_camera(&camera);
 
                 // MEMO: yanked this value from SDL_GetPerformanceFrequency.
                 // SDL_GetPerformanceFrequency returns 1000000000 if you can use CLOCK_MONOTONIC_RAW.
@@ -318,7 +320,9 @@ int main(int argc, char **argv) {
 
                 bool32 running = 1;
 
-                bool32 wireframe_on = 0;
+                bool32 draw_z_buffer = 0;
+                bool32 draw_wireframe = 0;
+
                 while (running) {
                     clear_buffer(&buffer, bg);
 
@@ -400,8 +404,15 @@ int main(int argc, char **argv) {
                     }
                     Color c = rgb_opaque(1.0, 1.0, 1.0);
 
-                    update_camera_with_input(&camera, &input, 0.016);
-                    draw_textured_model(&buffer, &model, &camera, &texture);
+                    if (!input.debug_menu_key) update_camera_with_input(&camera, &input, 0.016);
+
+                    if (draw_z_buffer) {
+                        DEBUG_render_z_buffer(&buffer);
+                    } else if (draw_wireframe) {
+                        draw_wire_model(&buffer, &model, &camera, c);
+                    } else {
+                        draw_textured_model(&buffer, &model, &camera, &texture);
+                    }
 
                     if (input.debug_menu_key) {
                         draw_debug_menu(&buffer, &input, &font_data, &camera, &model,
@@ -416,25 +427,32 @@ int main(int argc, char **argv) {
                         {
                             char *name = (char *)"Reset Camera";
                             if(imm_draw_text_button(&buffer, current_x, 0, min_width, topbar_y_size, name, &actual_width)) {
-                                camera.position = fVec3(0.0, 0.0, 2.0);
-                                camera.target   = fVec3(0.0, 0.0, 1.0);
-                                camera.up       = fVec3(0.0, 1.0, 0.0);
-                                camera.fov = 90.0f;
-                                camera.aspect_ratio = 16.0 / 9.0;
-                                camera.z_far = 10000.0;
-                                camera.z_near = 0.0;
-                                camera.yaw = 90.0f;
+                                default_camera(&camera);
+                            }
+                            current_x += actual_width;
+                        }
+                        {
+                            char *name = (char *)"Z Buffer";
+                            if(imm_draw_text_button(&buffer, current_x, 0, min_width, topbar_y_size, name, &actual_width)) {
+                                draw_z_buffer = !draw_z_buffer;
+                                draw_wireframe = 0;
                             }
                             current_x += actual_width;
                         }
                         {
                             char *name = (char *)"Wireframe";
                             if(imm_draw_text_button(&buffer, current_x, 0, min_width, topbar_y_size, name, &actual_width)) {
-                                wireframe_on = !wireframe_on;
+                                draw_wireframe = !draw_wireframe;
+                                draw_z_buffer = 0;
                             }
                             current_x += actual_width;
                         }
-
+                        {
+                            char *name = format("FOV: %06.2f", camera.fov);
+                            int32 fixed_width = 170;
+                            imm_draw_text_slider(&buffer, current_x, 0, fixed_width, topbar_y_size, name, 0.0, 120.0, &camera.fov);
+                            current_x += fixed_width;
+                        }
                         imm_end();
                     }
                     update_xwindow_with_drawbuffer(display, my_window, context, &buffer);

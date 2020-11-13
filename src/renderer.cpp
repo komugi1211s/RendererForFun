@@ -14,19 +14,22 @@ void clear_buffer(Drawing_Buffer *buffer, Color color) {
     uint32 total_size = buffer->window_width * buffer->window_height;
 
     uint32 _color = color.to_uint32_argb();
-    real32 z_buffer_min = -1.175494351e-38f;
+    // これ以上遠ければクリップされる
+    real32 z_buffer_furthest = 1000000;
     for (int32 i = 0; i < total_size; ++i) {
         buf[i] = _color;
     }
     for (int32 i = 0; i < total_size; ++i) {
-        buffer->z_buffer[i] = z_buffer_min;
+        buffer->z_buffer[i] = z_buffer_furthest;
     }
 }
 
 void draw_line(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, Color color) {
-    ASSERT(0 <= x0 && 0 <= x1 && 0 <= y0 && 0 <= y1);
-    ASSERT(x1 < buffer->window_width);
-    ASSERT(y1 < buffer->window_height);
+    x0 = MATHS_MAX(0, MATHS_MIN(x0, buffer->window_width));
+    x1 = MATHS_MAX(0, MATHS_MIN(x1, buffer->window_width));
+    y0 = MATHS_MAX(0, MATHS_MIN(y0, buffer->window_height));
+    y1 = MATHS_MAX(0, MATHS_MIN(y1, buffer->window_height));
+
     uint32 *buf = _CUR_BUF(buffer);
 
     int32 x_start, x_end, y_start, y_end;
@@ -68,6 +71,18 @@ void draw_line(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, C
                 y = t;
             }
             buf[(y * buffer->window_width) + x] = c;
+        }
+    }
+}
+
+void DEBUG_render_z_buffer(Drawing_Buffer *buffer) {
+    uint32 *buf = _CUR_BUF(buffer);
+    for (int32 y = 0; y < buffer->window_height; ++y) {
+        for(int32 x = 0; x < buffer->window_width; ++x) {
+            int32 z_buffer_position = x + y * buffer->window_width;
+            uint8 z_val = (uint32)ceil(MATHS_MIN(MATHS_MAX(0.0, buffer->z_buffer[z_buffer_position]), 254.0));
+
+            buf[z_buffer_position] = ( z_val << 16 | z_val << 8 | z_val );
         }
     }
 }
@@ -170,7 +185,7 @@ void draw_filled_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVecto
                 if (position > (buffer->window_width * buffer->window_height)) continue;
                 if (position < 0) continue;
 
-                if (buffer->z_buffer[position] < z_value) {
+                if (buffer->z_buffer[position] > z_value) {
                     buffer->z_buffer[position] = z_value;
                     buf[position] = c;
                 }
@@ -201,17 +216,15 @@ void draw_textured_triangle(Drawing_Buffer *buffer,
     bool32 triangle_is_degenerate = fabsf(det_T) < 1;
 
     if (!triangle_is_degenerate) {
-        int32 y_min = (int32)floor(bd_box.min_v.y);
-        int32 y_max = (int32)ceil(bd_box.max_v.y);
-        int32 x_min = (int32)floor(bd_box.min_v.x);
-        int32 x_max = (int32)ceil(bd_box.max_v.x);
-        if (y_min < 0 || buffer->window_height < y_max || x_min < 0 || buffer->window_width < x_max) {
-            return;
-        }
+        int32 y_min = (int32)MATHS_MAX(floor(bd_box.min_v.y), 0);
+        int32 y_max = (int32)MATHS_MIN(ceil(bd_box.max_v.y), buffer->window_height);
+        int32 x_min = (int32)MATHS_MAX(floor(bd_box.min_v.x), 0);
+        int32 x_max = (int32)MATHS_MIN(ceil(bd_box.max_v.x), buffer->window_width);
 
         for(int32 y = y_min; y < y_max; ++y) {
             PA.y = y - A.y;
             for(int32 x = x_min; x < x_max; ++x) {
+                int32 position = (y * buffer->window_width) + x;
                 PA.x = x - A.x;
                 real32 gamma1, gamma2, gamma3;
 
@@ -226,11 +239,6 @@ void draw_textured_triangle(Drawing_Buffer *buffer,
                 // (1 - x - y)A + xB + yC として定義してあるので
                 // 掛け算もそれに合わせて揃えないといけない
                 real32 z_value = (A.z * gamma3) + (B.z * gamma1) + (C.z * gamma2);
-                int32 position = (y * buffer->window_width) + x;
-
-                if (position > (buffer->window_width * buffer->window_height)) continue;
-                if (position < 0) continue;
-                if (x > buffer->window_width || x < 0) continue;
 
                 real32 t_x = (texcoords[0].x * gamma3) + (texcoords[1].x * gamma1) + (texcoords[2].x * gamma2);
                 real32 t_y = (texcoords[0].y * gamma3) + (texcoords[1].y * gamma1) + (texcoords[2].y * gamma2);
@@ -244,7 +252,7 @@ void draw_textured_triangle(Drawing_Buffer *buffer,
                 g = texture->data[tex_p + 1] * light_intensity;
                 b = texture->data[tex_p + 2] * light_intensity;
 
-                if (buffer->z_buffer[position] < z_value) {
+                if (buffer->z_buffer[position] > z_value) {
                     buffer->z_buffer[position] = z_value;
                     buf[position] = (uint32) (r << 16 | g << 8 | b);
                 }
@@ -253,10 +261,11 @@ void draw_textured_triangle(Drawing_Buffer *buffer,
     }
 }
 
-void draw_triangle_wireframe(Drawing_Buffer *buffer, iVector2 A, iVector2 B, iVector2 C, Color color) {
-    draw_line(buffer, A.x, A.y, B.x, B.y, color);
-    draw_line(buffer, A.x, A.y, C.x, C.y, color);
-    draw_line(buffer, B.x, B.y, C.x, C.y, color);
+void draw_wire_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3 C, Color color) {
+    PROFILE_FUNC
+    draw_line(buffer, floor(A.x), floor(A.y), ceil(B.x), ceil(B.y), color);
+    draw_line(buffer, floor(A.x), floor(A.y), ceil(C.x), ceil(C.y), color);
+    draw_line(buffer, floor(B.x), floor(B.y), ceil(C.x), ceil(C.y), color);
 }
 
 // I think I can do simd???
@@ -264,9 +273,11 @@ void project_viewport(fVector3 world_space[3],
                       int32 window_width,
                       int32 window_height)
 {
+    const real32 arbitary_depth = 255;
     for (int i = 0; i < 3; ++i) {
         world_space[i].x = ((1.0 + world_space[i].x) * 0.5) * window_width;
         world_space[i].y = ((1.0 + world_space[i].y) * 0.5) * window_height;
+        world_space[i].z = ((1.0 + world_space[i].z) * 0.5) * arbitary_depth;
     }
 }
 
@@ -287,13 +298,11 @@ void draw_filled_rectangle(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1,
     }
 }
 void draw_textured_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Texture *texture) {
-    PROFILE_FUNC
-    fVector3 light_pos = fVec3(0.0, 0.0, -10.0);
+    PROFILE_FUNC;
+
     fVector3 AB, AC;
-    fVector3 surface_normal, light_normal;
-    real32 light_intensity;
+    fVector3 surface_normal;
     fMat4x4 mvp = create_mvp_matrix(camera);
-    real32 aspect_ratio = 16.0 / 9.0;
     for (size_t i = 0; i < model->num_indexes; ++i) {
         fVector3 vertices[3]  = {0};
         fVector3 texcoords[3] = {0};
@@ -308,54 +317,71 @@ void draw_textured_model(Drawing_Buffer *buffer, Model *model, Camera *camera, T
                 fv4vert.z = vertices[v].z;
                 fv4vert.w = 1.0;
                 fv4vert = fmul_fmat4x4_fv4(mvp, fv4vert);
+
+                if (fv4vert.z > fv4vert.w || fv4vert.z < -fv4vert.w)
+                    goto frustrum_cull_tex;
+
                 vertices[v].x = fv4vert.x / fv4vert.w;
                 vertices[v].y = fv4vert.y / fv4vert.w;
-                vertices[v].z = fv4vert.z;
+                vertices[v].z = fv4vert.z / fv4vert.w;
+            }
+            AB = fsub_fv3(vertices[1], vertices[0]);
+            AC = fsub_fv3(vertices[2], vertices[0]);
+
+            // Back-face Culling
+            // 既に頂点はView Spaceにある為、-V0.N >= 0 を計算する
+            surface_normal = fnormalize_fv3(fcross_fv3(AC, AB));
+            if(-fdot_fv3(vertices[0], surface_normal) < 0) continue;
+
+            project_viewport(vertices, buffer->window_width,
+                                       buffer->window_height);
+            draw_textured_triangle(buffer,    vertices[0], vertices[1], vertices[2],
+                                   texcoords, 1.0, texture);
+
+    frustrum_cull_tex:;
+        }
+    }
+}
+
+void draw_wire_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Color color) {
+    PROFILE_FUNC;
+
+    fVector3 AB, AC;
+    fVector3 surface_normal;
+    fMat4x4 mvp = create_mvp_matrix(camera);
+    for (size_t i = 0; i < model->num_indexes; ++i) {
+        fVector3 vertices[3]  = {0};
+        fVector3 texcoords[3] = {0};
+        bool32 vert_loaded = load_model_vertices(model, i, vertices);
+        bool32 tex_loaded  = load_model_texcoords(model, i, texcoords);
+        if (vert_loaded && tex_loaded) {
+            for (int v = 0; v < 3; ++v) {
+                fVector4 fv4vert;
+                fv4vert.x = vertices[v].x;
+                fv4vert.y = vertices[v].y;
+                fv4vert.z = vertices[v].z;
+                fv4vert.w = 1.0;
+                fv4vert = fmul_fmat4x4_fv4(mvp, fv4vert);
+
+                if (fv4vert.z > fv4vert.w || fv4vert.z < -fv4vert.w)
+                    goto frustrum_cull_wireframe;
+
+                vertices[v].x = fv4vert.x / fv4vert.w;
+                vertices[v].y = fv4vert.y / fv4vert.w;
+                vertices[v].z = fv4vert.z / fv4vert.w;
             }
 
             AB = fsub_fv3(vertices[1], vertices[0]);
             AC = fsub_fv3(vertices[2], vertices[0]);
 
-            surface_normal  = fnormalize_fv3(fcross_fv3_simd(AC, AB));
-            light_normal    = fnormalize_fv3(light_pos);
-            light_intensity = fdot_fv3(light_normal, surface_normal);
-
-            if (light_intensity < 0) continue;
             project_viewport(vertices, buffer->window_width,
                                        buffer->window_height);
-            draw_textured_triangle(buffer,    vertices[0], vertices[1], vertices[2],
-                                   texcoords, light_intensity, texture);
 
-clipped_by_w_buffer:;
+            draw_wire_triangle(buffer, vertices[0], vertices[1], vertices[2],
+                                   color);
         }
-    }
-}
 
-void draw_model_wireframe(Drawing_Buffer *buffer, Model *model, Color color) {
-    fVector3 vertex[3];
-
-    for (size_t i = 0; i < model->num_indexes; ++i) {
-        if (load_model_vertices(model, i, vertex)) {
-            iVector2 one, two, three;
-
-            one.x   = (int32)((1.0 + vertex[0].x) * (buffer->window_width  - 1) / 2);
-            one.y   = (int32)((1.0 + vertex[0].y) * (buffer->window_height - 1) / 2);
-
-            two.x   = (int32)((1.0 + vertex[1].x) * (buffer->window_width  - 1) / 2);
-            two.y   = (int32)((1.0 + vertex[1].y) * (buffer->window_height - 1) / 2);
-
-            three.x = (int32)((1.0 + vertex[2].x) * (buffer->window_width  - 1) / 2);
-            three.y = (int32)((1.0 + vertex[2].y) * (buffer->window_height - 1) / 2);
-
-            if (one.x   >= buffer->window_width) TRACE("One.x overflow. %d", one.x);
-            if (one.y   >= buffer->window_height) TRACE("One.y overflow. %d", one.y);
-            if (two.x   >= buffer->window_width) TRACE("Two.x overflow. %d", two.x);
-            if (two.y   >= buffer->window_height) TRACE("Two.y overflow. %d", two.y);
-            if (three.x >= buffer->window_width) TRACE("Three.x overflow. %d", three.x);
-            if (three.y >= buffer->window_height) TRACE("Three.y overflow. %d", three.y);
-
-            draw_triangle_wireframe(buffer, one, two, three, color);
-        }
+frustrum_cull_wireframe:;
     }
 }
 
@@ -368,7 +394,8 @@ typedef struct DEBUGCharacterBitmap {
 global_variable DEBUGCharacterBitmap bitmap_array[BITMAP_ARRAY_SIZE] = {0}; // THIS IS TOO STUPID
 
 void draw_text(Drawing_Buffer *buffer, FontData *font, int32 start_x, int32 start_y, char *text) {
-    PROFILE_FUNC
+    PROFILE_FUNC;
+
     int32 x = start_x;
     int32 y = start_y + (font->base_line + font->line_gap);
     uint32 *buf = _CUR_BUF(buffer);
@@ -414,6 +441,7 @@ void draw_text(Drawing_Buffer *buffer, FontData *font, int32 start_x, int32 star
     }
 }
 
+
 fMat4x4 create_mvp_matrix(Camera *cam) {
     /*
      * ModelViewProjectionマトリックスを作る（現状はModel == Identity なので実質VP）
@@ -425,6 +453,7 @@ fMat4x4 create_mvp_matrix(Camera *cam) {
     y = fnormalize_fv3(fcross_fv3(z, x));
 
     fMat4x4 lookat = fMat4Identity();
+
     lookat.row[0].col[0] = x.x;
     lookat.row[0].col[1] = x.y;
     lookat.row[0].col[2] = x.z;
@@ -440,13 +469,13 @@ fMat4x4 create_mvp_matrix(Camera *cam) {
     lookat.row[2].col[2] = z.z;
     lookat.row[2].col[3] = -fdot_fv3(z, cam->position);
 
-    real32 tan_fov = tanf(cam->fov / 2.0);
+    real32 tan_fov = tan(MATHS_DEG2RAD(cam->fov) / 2.0);
     fMat4x4 proj = {0};
 
     proj.row[0].col[0] = 1.0f / (cam->aspect_ratio * tan_fov);
     proj.row[1].col[1] = 1.0f / tan_fov;
-    proj.row[2].col[2] = -(cam->z_near + cam->z_far) / (cam->z_far - cam->z_near);
-    proj.row[2].col[3] = -(2.0 * cam->z_far * cam->z_near) / (cam->z_far - cam->z_near);
+    proj.row[2].col[2] = -(cam->z_near + cam->z_far)      / (cam->z_far - cam->z_near);
+    proj.row[2].col[3] = (2.0 * cam->z_far * cam->z_near) / (cam->z_near - cam->z_far);
     proj.row[3].col[2] = -1.0f;
 
     return fmul_fmat4x4(proj, lookat);

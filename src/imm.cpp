@@ -61,3 +61,41 @@ bool32 imm_draw_text_button(Drawing_Buffer *buffer,
     if (actual_width) *actual_width = (width + padding * 2);
     return pressed;
 }
+
+void   imm_draw_text_slider(Drawing_Buffer *buffer,
+                            int32 x, int32 y,
+                            int32 width, int32 height,
+                            char *text,
+                            real32 min_value, real32 max_value,
+                            real32 *output_value)
+{
+    if (!_imm_can_draw()) return;
+    int32 padding = width / 4;
+
+    int32 x0 = x;
+    int32 x1 = x + width + (padding * 2);
+    int32 y0 = y;
+    int32 y1 = y + height;
+
+    bool32 within_bounds = (x0    < imm_input->mouse.x && imm_input->mouse.x < x1
+                            && y0 < imm_input->mouse.y && imm_input->mouse.y < y1);
+
+    Color  color = imm_style.bg_color;
+    if (within_bounds) {
+        color = imm_style.hot_color;
+        if (imm_input->mouse.left) {
+            color = imm_style.active_color;
+            real32 position = imm_input->mouse.x;
+            real32 pos_t = (position - x0) / (x1 - x0);
+            *output_value = min_value + (pos_t * max_value);
+        }
+    }
+
+    real32 percentage  = (*output_value - min_value) / (max_value - min_value);
+    int32 x_slider_pos = (x0 * (1.0 - percentage)) + (x1 * percentage);
+
+    draw_filled_rectangle(buffer, x0, y0, x1, y1, color);
+    draw_text(buffer, imm_font, x0 + padding, y0, text);
+    draw_filled_rectangle(buffer, x_slider_pos - 2, y0, x_slider_pos + 1, y1, rgb_opaque(0.8, 0.8, 0.8));
+    return;
+}
