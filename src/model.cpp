@@ -63,6 +63,8 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
             // turned off right now.
             case 'g':
             case 's':
+            case 'o':
+            case 'm':
                 while (*obj_file != '\n' && *obj_file != '\0') {
                     obj_file++;
                 }
@@ -106,7 +108,7 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
 
                 fVector3 result;
 
-                if (next_char == 't') { // texture vertex!
+                if (next_char == 't') { // texcoords!
                     obj_file += 3;
                     ASSERT(model->num_texcoords < maximum_idx);
 
@@ -117,19 +119,17 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
                         return 0;
                     }
                     obj_file = ++skipped;
-
                     result.y = strtof(obj_file, &skipped);
-                    if(*skipped != ' ') {
-                        TRACE("Expected space separator, got `%c` at line %u", *skipped, current_line);
-                        return 0;
+
+                    while(*skipped != '\n') {
+                        ++skipped;
+                        if (*skipped == '\0') {
+                            TRACE("Unexpected EOF at line %u", current_line);
+                            return 0;
+                        }
                     }
-                    obj_file = ++skipped;
-
-                    result.z = strtof(obj_file, &skipped);
                     obj_file = skipped;
-
                     model->texcoords[model->num_texcoords++] = result;
-
                 } else if (next_char == ' ') { // valid vertex!
                     obj_file += 2;
                     ASSERT(model->num_vertices < maximum_idx);

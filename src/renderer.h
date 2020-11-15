@@ -15,10 +15,10 @@ global_variable bool32  mvp_precomputed;
 typedef struct Drawing_Buffer {
     int32 window_width;
     int32 window_height;
-
+    
     int32 depth;
     bool32 is_drawing_first;
-
+    
     uint32 *first_buffer;
     uint32 *second_buffer;
     real32 *z_buffer;
@@ -28,7 +28,7 @@ typedef struct Camera {
     fVector3 position;
     fVector3 target;
     fVector3 up;
-
+    
     real32 fov;
     real32 aspect_ratio;
     real32 z_near;
@@ -36,11 +36,16 @@ typedef struct Camera {
     real32 pitch, yaw;
 } Camera;
 
+
+global_variable const uint32 CLEAR_COLOR_BUFFER = 1 << 1;
+global_variable const uint32 CLEAR_Z_BUFFER     = 1 << 2;
+
+
 // TODO(fuzzy):
 // RGB/BGR format.
 
 void swap_buffer(Drawing_Buffer *buffer);
-void clear_buffer(Drawing_Buffer *buffer, Color color);
+void clear_buffer(Drawing_Buffer *buffer, uint32 clear_mode);
 void draw_line(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, Color color);
 
 void draw_wire_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3 C, Color color);

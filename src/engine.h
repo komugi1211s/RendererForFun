@@ -28,10 +28,10 @@ typedef struct Color {
     uint32 to_uint32_argb() {
         uint8 u8r, u8g, u8b, u8a;
 
-        u8a = (uint8)floor(MATHS_MAX(0.0, MATHS_MIN(a, 1.0)) * 255.0);
-        u8r = (uint8)floor(MATHS_MAX(0.0, MATHS_MIN(r, 1.0)) * 255.0);
-        u8g = (uint8)floor(MATHS_MAX(0.0, MATHS_MIN(g, 1.0)) * 255.0);
-        u8b = (uint8)floor(MATHS_MAX(0.0, MATHS_MIN(b, 1.0)) * 255.0);
+        u8a = (uint8)floor(fmax(0.0, fmin(a, 1.0)) * 255.0);
+        u8r = (uint8)floor(fmax(0.0, fmin(r, 1.0)) * 255.0);
+        u8g = (uint8)floor(fmax(0.0, fmin(g, 1.0)) * 255.0);
+        u8b = (uint8)floor(fmax(0.0, fmin(b, 1.0)) * 255.0);
 
         uint32 result = ((u8a << 24) | (u8r << 16) | (u8g << 8) | u8b);
         return result;
@@ -88,4 +88,5 @@ Color rgb_opaque(real32 r, real32 g, real32 b) {
 
     return result;
 }
+
 #endif
