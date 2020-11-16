@@ -128,19 +128,20 @@ BB_fV3(fVector3 one, fVector3 two, fVector3 three) {
     return box;
 }
 
+
+internal inline fVector3 fneg_fv3(fVector3 A);
+internal inline fVector3 fadd_fv3(fVector3 A, fVector3 B);
+internal inline fVector3 fsub_fv3(fVector3 A, fVector3 B);
+internal inline fVector3 fmul_fv3_fscalar(fVector3 A, real32 Scalar);
 internal inline fVector3 fnormalize_fv3(fVector3 A);
 internal inline real32 fdot_fv3(fVector3 A, fVector3 B);
 internal inline real32 fdot_fv3_simd(fVector3 A, fVector3 B);
-
 internal inline fVector3 fcross_iv3(iVector3 A, iVector3 B);
 internal inline fVector3 fcross_fv3(fVector3 A, fVector3 B);
 internal inline fVector3 fcross_fv3_simd(fVector3 A, fVector3 B);
 
 internal inline iVector3 icross_iv3(iVector3 A, iVector3 B);
 internal inline iVector3 isub_iv3(iVector3 A, iVector3 B);
-internal inline fVector3 fadd_fv3(fVector3 A, fVector3 B);
-internal inline fVector3 fsub_fv3(fVector3 A, fVector3 B);
-internal inline fVector3 fmul_fv3_fscalar(fVector3 A, real32 Scalar);
 
 internal inline fMat4x4  fmul_fmat4x4(fMat4x4 A, fMat4x4 B);
 internal inline fVector4 fmul_fmat4x4_fv4(fMat4x4 A, fVector4 B);

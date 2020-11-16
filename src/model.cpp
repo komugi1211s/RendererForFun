@@ -211,7 +211,7 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
                 ASSERT(model->num_face_indices < maximum_idx);
 
                 char *skipped;
-                FaceId index_result;
+                FaceId index_result = {0};
                 index_result.vertex.x = strtod(obj_file, &skipped);
                 if (*skipped == '/') {
                     obj_file = ++skipped;
@@ -264,7 +264,7 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
                     }
                 }
 
-                while(*skipped != '\n') {
+                while(*skipped != '\n' && *skipped != '\0') {
                     skipped++;
                 }
                 obj_file = skipped;

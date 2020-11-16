@@ -34,6 +34,15 @@ fVector3 fnormalize_fv3(fVector3 A) {
 }
 
 internal inline fVector3
+fneg_fv3(fVector3 A) {
+    A.x = -A.x;
+    A.y = -A.y;
+    A.z = -A.z;
+
+    return A;
+}
+
+internal inline fVector3
 fcross_fv3(fVector3 A, fVector3 B) {
     fVector3 result;
 

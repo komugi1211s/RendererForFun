@@ -29,7 +29,7 @@ global_variable Drawing_Buffer drawing_buffer;
 global_variable Input          input;
 
 void render_buffer(HDC context, RECT *client_rect) {
-    uint32 *current_buffer = drawing_buffer.is_drawing_first ? drawing_buffer.first_buffer : drawing_buffer.second_buffer;
+    uint32 *current_buffer = drawing_buffer.back_buffer;
     int32 client_width  = client_rect->right  - client_rect->left;
     int32 client_height = client_rect->bottom - client_rect->top;
 
@@ -149,17 +149,23 @@ bool32 load_simple_model(char *model_name, Model *model) {
         fseek(file, 0, SEEK_END);
         size_t file_length = ftell(file);
         fseek(file, 0, SEEK_SET);
-
+        // TODO(fuzzy): @MemoryLeak
+        // Modelに渡されるデータは全部フリーされずにずっと残ったままになるので、
+        // 新しいモデルをロードする機能の実装を行う際は**必ず**アロケーターを先に書くこと。 
         char *buffer = (char *)VirtualAlloc(0, file_length, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
         model->vertices =
             (fVector3 *)VirtualAlloc(0, file_length * sizeof(fVector3), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+        
+        model->normals =
+            (fVector3 *)VirtualAlloc(0, file_length * sizeof(fVector3), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+
         model->texcoords =
             (fVector3 *)VirtualAlloc(0, file_length * sizeof(fVector3), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
-        model->indexes =
-            (ModelIndex *)VirtualAlloc(0, file_length * sizeof(ModelIndex), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+        model->face_indices =
+            (FaceId *)VirtualAlloc(0, file_length * sizeof(FaceId), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
-        ASSERT(buffer || model->vertices || model->indexes || model->texcoords);
+        ASSERT(buffer || model->vertices || model->normals || model->face_indices || model->texcoords);
         fread(buffer, 1, file_length, file);
         fclose(file);
 
@@ -167,9 +173,9 @@ bool32 load_simple_model(char *model_name, Model *model) {
         VirtualFree(buffer, 0, MEM_RELEASE);
 
         if(!parsed) {
-            VirtualFree(model->vertices,  0, MEM_RELEASE);
-            VirtualFree(model->texcoords, 0,  MEM_RELEASE);
-            VirtualFree(model->indexes,   0,  MEM_RELEASE);
+            VirtualFree(model->vertices,     0, MEM_RELEASE);
+            VirtualFree(model->texcoords,    0, MEM_RELEASE);
+            VirtualFree(model->face_indices, 0, MEM_RELEASE);
 
             TRACE("Failed to Load model.");
             return 0;
@@ -345,14 +351,16 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             }
 
             Model model = {0};
-            if (!load_simple_model("african_head.obj", &model)) {
+            if (!load_simple_model("teapot.obj", &model)) {
                 return 0;
             }
 
+            /* 
             Texture texture = {0};
             if (!load_simple_texture("african_head.tga", &texture)) {
                 return 0;
             }
+            */
 
             ImmStyle default_style;
             default_style.bg_color = rgba(0.25, 0.25, 0.25, 0.5);
@@ -368,11 +376,11 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             size_t z_buffer_size     = (window_width * window_height * sizeof(real32));
 
             char *allocation = (char *)VirtualAlloc(0, color_buffer_size * 2, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-            drawing_buffer.first_buffer = (uint32 *)allocation;
-            drawing_buffer.second_buffer = (uint32 *)(allocation + color_buffer_size);
+            drawing_buffer.visible_buffer = (uint32 *)allocation;
+            drawing_buffer.back_buffer    = (uint32 *)(allocation + color_buffer_size);
             drawing_buffer.z_buffer = (real32 *)VirtualAlloc(0, z_buffer_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
-            ASSERT(drawing_buffer.first_buffer && drawing_buffer.z_buffer);
+            ASSERT(drawing_buffer.visible_buffer && drawing_buffer.z_buffer);
             MSG message;
 
             LARGE_INTEGER freq;
@@ -394,6 +402,8 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             real32 delta_time = 0.016; // delta time 60fps
             bool32 wireframe_on = 0;
             bool32 draw_z_buffer = 0;
+            clear_buffer(&drawing_buffer, CLEAR_COLOR_BUFFER | CLEAR_Z_BUFFER);
+
             while(running) {
                 HDC context = GetDC(window);
                 RECT client_rect;
@@ -416,6 +426,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
                     draw_wire_model(&drawing_buffer, &model, &camera, color);
                 } else {
                     draw_filled_model(&drawing_buffer, &model, &camera, color);
+                    // draw_filled_model(&drawing_buffer, &model, &camera, &texture);
                 }
 
                 if (draw_z_buffer) {
@@ -480,11 +491,12 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             }
 
             // stbi_image_free(texture.data);
-            VirtualFree(model.vertices,  0, MEM_RELEASE);
-            VirtualFree(model.texcoords, 0,  MEM_RELEASE);
-            VirtualFree(model.indexes,   0,  MEM_RELEASE);
-            VirtualFree(drawing_buffer.first_buffer, 0, MEM_RELEASE);
-            VirtualFree(drawing_buffer.z_buffer, 0, MEM_RELEASE);
+            VirtualFree(model.vertices,       0, MEM_RELEASE);
+            VirtualFree(model.texcoords,      0, MEM_RELEASE);
+            VirtualFree(model.normals,        0, MEM_RELEASE);
+            VirtualFree(model.face_indices,   0, MEM_RELEASE);
+            VirtualFree(drawing_buffer.visible_buffer > drawing_buffer.back_buffer ? drawing_buffer.back_buffer : drawing_buffer.visible_buffer, 0, MEM_RELEASE);
+            VirtualFree(drawing_buffer.z_buffer,     0, MEM_RELEASE);
         } else {
             TRACE("CreateWindowEx failed.");
             BREAK

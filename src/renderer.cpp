@@ -28,17 +28,6 @@ void clear_buffer(Drawing_Buffer *buffer, uint32 clear_mode) {
     }
 }
 
-/*
- * ３つの頂点を半時計回りにソートする。
- * この関数を呼んだ後は以下の条件が真となる:
- *
- *
- *
- * */
-void sort_vertex_counterclockwise(fVector3 vertices[3]) {
-}
-
-
 void draw_line(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, Color color) {
     x0 = MATHS_MAX(0, MATHS_MIN(x0, buffer->window_width));
     x1 = MATHS_MAX(0, MATHS_MIN(x1, buffer->window_width));
@@ -379,10 +368,6 @@ void draw_filled_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Col
                 face.vertices[v].y = fv4vert.y / fv4vert.w;
                 face.vertices[v].z = fv4vert.z / fv4vert.w;
             }
-
-            if (face.has_normals) {
-            }
-
             AB = fsub_fv3(face.vertices[1], face.vertices[0]);
             AC = fsub_fv3(face.vertices[2], face.vertices[0]);
 
@@ -439,7 +424,8 @@ void draw_textured_model(Drawing_Buffer *buffer, Model *model, Camera *camera, T
             // Back-face Culling
             // 既に頂点はView Spaceにある為、-V0.N >= 0 を計算する
             surface_normal = fnormalize_fv3(fcross_fv3(AC, AB));
-            if(-fdot_fv3(face.vertices[0], surface_normal) < 0) continue;
+            real32 culling_result = -fdot_fv3(face.vertices[0], surface_normal);
+            if(culling_result < 0) continue;
 
             project_viewport(face.vertices, buffer->window_width,
                              buffer->window_height);
@@ -490,6 +476,8 @@ void draw_wire_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Color
 
             draw_wire_triangle(buffer, face.vertices[0], face.vertices[1], face.vertices[2],
                                color);
+        } else {
+            TRACE("failed to load model");
         }
 
         do_not_render_and_go_next_triangles_wireframe:;

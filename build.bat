@@ -3,7 +3,7 @@
 
 IF NOT EXIST ./dist mkdir dist
 set INCLUDES=/I "W:\CppProject\CppLib\CImgui\include"
-set COMPOPTION=/Zi /MD /Fo"dist/main_win32.obj" /Fd"dist/vc140.pdb"
+set COMPOPTION=/Zi /MD /Fo"dist/main_win32.obj" /Fd"dist/vc140.pdb" /source-charset:utf-8 /fp:strict
 
 set LIBPATH=/LIBPATH:"W:\CppProject\CppLib\CImgui\lib"
 set LINKS=user32.lib shell32.lib gdi32.lib cimgui.lib

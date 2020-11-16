@@ -25,6 +25,8 @@ cd RendererForFun
 どちらも`/dist`内にコンパイルされたファイルを作ります。
 
 # TODO
+- [ ] (Windows) BackFace Cullingがうまく動作していない
+- [ ] メモリーアロケーター
 - [ ] フォントをバンドル
 - [ ] テクスチャ、モデルのロード
 - [ ] IMGUI風GUIの導入
