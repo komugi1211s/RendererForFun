@@ -16,45 +16,96 @@
 #include "maths.h"
 #include "model.h"
 
-// IMPORTANT NOTE(fuzzy): This only works in IEEE-754 floating point format.
-// if it does not work, well then good luck.
+bool32 Model::load_face(size_t index, Face *output) {
+    ASSERT(this->num_face_indices > index);
+    FaceId indexes = this->face_indices[index];
 
-bool32 load_model_vertices(Model *model, size_t triangle_index, fVector3 out_vertex[3]) {
-    ASSERT(model->num_indexes > triangle_index);
-    ModelIndex indexes = model->indexes[triangle_index];
+    // NOTE(fuzzy):
+    // ここはASSERTで強制失敗するべきか、それともロードできない体を伝えるべきか？
+    // モデルの正常なロードに失敗しているのであればAssertで強制失敗させても良い気もする。
 
-    if ((indexes.vert_idx.x - 1) > model->num_vertices) return 0;
-    if ((indexes.vert_idx.y - 1) > model->num_vertices) return 0;
-    if ((indexes.vert_idx.z - 1) > model->num_vertices) return 0;
+    if ((indexes.vertex.x - 1) > this->num_vertices) return 0;
+    if ((indexes.vertex.y - 1) > this->num_vertices) return 0;
+    if ((indexes.vertex.z - 1) > this->num_vertices) return 0;
 
-    out_vertex[0] = model->vertices[indexes.vert_idx.x-1];
-    out_vertex[1] = model->vertices[indexes.vert_idx.y-1];
-    out_vertex[2] = model->vertices[indexes.vert_idx.z-1];
+    output->vertices[0] = this->vertices[indexes.vertex.x - 1];
+    output->vertices[1] = this->vertices[indexes.vertex.y - 1];
+    output->vertices[2] = this->vertices[indexes.vertex.z - 1];
+
+    if (indexes.texcoord.x != 0) { // NOTE(fuzzy): 0始まりは有り得ない
+        if ((indexes.texcoord.x - 1) > this->num_texcoords) return 0;
+        if ((indexes.texcoord.y - 1) > this->num_texcoords) return 0;
+        if ((indexes.texcoord.z - 1) > this->num_texcoords) return 0;
+
+        output->texcoords[0] = this->texcoords[indexes.texcoord.x - 1];
+        output->texcoords[1] = this->texcoords[indexes.texcoord.y - 1];
+        output->texcoords[2] = this->texcoords[indexes.texcoord.z - 1];
+
+        output->has_texcoords = 1;
+    }
+
+    if (indexes.normal.x != 0) {
+        if ((indexes.normal.x - 1) > this->num_normals) return 0;
+        if ((indexes.normal.y - 1) > this->num_normals) return 0;
+        if ((indexes.normal.z - 1) > this->num_normals) return 0;
+
+        output->normals[0] = this->normals[indexes.normal.x - 1];
+        output->normals[1] = this->normals[indexes.normal.y - 1];
+        output->normals[2] = this->normals[indexes.normal.z - 1];
+
+        output->has_normals = 1;
+    }
 
     return 1;
 }
 
-bool32 load_model_texcoords(Model *model, size_t triangle_index, fVector3 out_tex[3]) {
-    ASSERT(model->num_indexes > triangle_index);
-    ModelIndex indexes = model->indexes[triangle_index];
+char *parse_vertex_definitions(char *start, fVector3 *out, uint32 line_for_error_reporting) {
+    ASSERT(out);
+    char *stopped_at;
+    char *current = start;
 
-    ASSERT((indexes.tex_idx.x - 1) < model->num_texcoords);
-    ASSERT((indexes.tex_idx.y - 1) < model->num_texcoords);
-    ASSERT((indexes.tex_idx.z - 1) < model->num_texcoords);
+    out->x = strtof(current, &stopped_at);
+    if (*stopped_at != ' ') {
+        TRACE("Unexpected char `%c` at line %u", *stopped_at, line_for_error_reporting);
+        return NULL;
+    }
+    current = (++stopped_at);
 
-    out_tex[0] = model->texcoords[indexes.tex_idx.x-1];
-    out_tex[1] = model->texcoords[indexes.tex_idx.y-1];
-    out_tex[2] = model->texcoords[indexes.tex_idx.z-1];
+    // NOTE(fuzzy):
+    // Y座標パース後のキャラクターは'\n'と' 'のどちらもあり得るが、
+    // それがValidなのはテクスチャ頂点のみである。
+    // 実際にValidな頂点であるかどうかは当関数の外で行うことにする。
+    // TODO(fuzzy):
+    // もし行末にコメントとかが入っていたらパースに失敗する
+    out->y = strtof(current, &stopped_at);
+    while (*stopped_at != ' ') {
+        if (*stopped_at == '\n') {
+            return stopped_at;
+        }
+        ++stopped_at;
+    }
+    current = (++stopped_at);
 
-    return 1;
+    out->z = strtof(current, &stopped_at);
+    while (*stopped_at != '\n') {
+        if (*stopped_at == '\0') {
+            TRACE("Unexpected EOF at line %u", line_for_error_reporting);
+            return NULL;
+        }
+        ++stopped_at;
+    }
+    current = stopped_at;
+    return current;
 }
+
 
 bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
     uint32 current_line = 0;
 
     model->num_vertices = 0;
     model->num_texcoords = 0;
-    model->num_indexes = 0;
+    model->num_normals = 0;
+    model->num_face_indices = 0;
 
     size_t maximum_idx = obj_file_length - 1;
     while(*obj_file) {
@@ -99,62 +150,46 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
                     return 0;
                 }
 
-                if (next_char == 'p' || next_char == 'n') {
+                if (next_char == 'p') {
                     while (*obj_file != '\n' && *obj_file != '\0') {
                         obj_file++;
                     }
                     break;
                 }
 
-                fVector3 result;
+                fVector3 result = {0};
+                fVector3 *out_array = NULL;
+                size_t next_position;
 
-                if (next_char == 't') { // texcoords!
-                    obj_file += 3;
-                    ASSERT(model->num_texcoords < maximum_idx);
+                if (next_char == 't') {
+                    obj_file += 3; // Skip 'vt ' including spaces.
+                    ASSERT(model->num_texcoords+1 < maximum_idx);
 
-                    char *skipped;
-                    result.x = strtof(obj_file, &skipped);
-                    if(*skipped != ' ') {
-                        TRACE("Expected space separator, got `%c` at line %u", *skipped, current_line);
-                        return 0;
-                    }
-                    obj_file = ++skipped;
-                    result.y = strtof(obj_file, &skipped);
+                    out_array = model->texcoords;
+                    next_position = model->num_texcoords++;
+                } else if (next_char == 'n') {
+                    obj_file += 3; // Skip 'vn ' including spaces.
+                    ASSERT(model->num_normals+1 < maximum_idx);
 
-                    while(*skipped != '\n') {
-                        ++skipped;
-                        if (*skipped == '\0') {
-                            TRACE("Unexpected EOF at line %u", current_line);
-                            return 0;
-                        }
-                    }
-                    obj_file = skipped;
-                    model->texcoords[model->num_texcoords++] = result;
-                } else if (next_char == ' ') { // valid vertex!
-                    obj_file += 2;
-                    ASSERT(model->num_vertices < maximum_idx);
+                    out_array = model->normals;
+                    next_position = model->num_normals++;
+                } else if (next_char == ' ') {
+                    obj_file += 2; // Skip 'v ' including spaces.
+                    ASSERT(model->num_vertices+1 < maximum_idx);
 
-                    char *skipped;
-                    result.x = strtof(obj_file, &skipped);
-                    if(*skipped != ' ') {
-                        TRACE("Expected space separator, got `%c` at line %u", *skipped, current_line);
-                        return 0;
-                    }
-                    obj_file = ++skipped;
-
-                    result.y = strtof(obj_file, &skipped);
-                    if(*skipped != ' ') {
-                        TRACE("Expected space separator, got `%c` at line %u", *skipped, current_line);
-                        return 0;
-                    }
-                    obj_file = ++skipped;
-
-                    result.z = strtof(obj_file, &skipped);
-                    obj_file = skipped;
-
-                    model->vertices[model->num_vertices++] = result;
+                    out_array = model->vertices;
+                    next_position = model->num_vertices++;
                 } else {
-                    TRACE("Expected space separator, got `%c` at line %u", next_char, current_line);
+                    TRACE("Unexpected char when parsing v, `%c` at line %u", next_char, current_line);
+                    return 0;
+                }
+
+                char *updated_obj_pointer = parse_vertex_definitions(obj_file, &result, current_line);
+                if (updated_obj_pointer) {
+                    out_array[next_position] = result;
+                    obj_file = updated_obj_pointer;
+                } else {
+                    TRACE("Parse vertex defintions failed.");
                     return 0;
                 }
             } break;
@@ -164,7 +199,7 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
             case ' ':
                 obj_file++;
                 break;
-            
+
             case '\n':
                 obj_file++;
                 current_line++;
@@ -173,13 +208,19 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
             case 'f':
             {
                 obj_file++;
-                ASSERT(model->num_indexes < maximum_idx);
+                ASSERT(model->num_face_indices < maximum_idx);
+
                 char *skipped;
-                ModelIndex index_result;
-                index_result.vert_idx.x = strtod(obj_file, &skipped);
+                FaceId index_result;
+                index_result.vertex.x = strtod(obj_file, &skipped);
                 if (*skipped == '/') {
                     obj_file = ++skipped;
-                    index_result.tex_idx.x = strtod(obj_file, &skipped);
+                    index_result.texcoord.x = strtod(obj_file, &skipped);
+
+                    if (*skipped == '/') {
+                        obj_file = ++skipped;
+                        index_result.normal.x = strtod(obj_file, &skipped);
+                    }
 
                     while(*skipped != ' ') {
                         if (*skipped == '\0') {
@@ -192,10 +233,15 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
 
                 obj_file = ++skipped;
 
-                index_result.vert_idx.y = strtod(obj_file, &skipped);
+                index_result.vertex.y = strtod(obj_file, &skipped);
                 if (*skipped == '/') {
                     obj_file = ++skipped;
-                    index_result.tex_idx.y = strtod(obj_file, &skipped);
+                    index_result.texcoord.y = strtod(obj_file, &skipped);
+
+                    if (*skipped == '/') {
+                        obj_file = ++skipped;
+                        index_result.normal.y = strtod(obj_file, &skipped);
+                    }
 
                     while(*skipped != ' ') {
                         if (*skipped == '\0') {
@@ -207,10 +253,15 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
                 }
                 obj_file = ++skipped;
 
-                index_result.vert_idx.z = strtod(obj_file, &skipped);
+                index_result.vertex.z = strtod(obj_file, &skipped);
                 if (*skipped == '/') {
                     obj_file = ++skipped;
-                    index_result.tex_idx.z = strtod(obj_file, &skipped);
+                    index_result.texcoord.z = strtod(obj_file, &skipped);
+
+                    if (*skipped == '/') {
+                        obj_file = ++skipped;
+                        index_result.normal.z = strtod(obj_file, &skipped);
+                    }
                 }
 
                 while(*skipped != '\n') {
@@ -218,7 +269,7 @@ bool32 parse_obj(char *obj_file, size_t obj_file_length, Model *model) {
                 }
                 obj_file = skipped;
 
-                model->indexes[model->num_indexes++] = index_result;
+                model->face_indices[model->num_face_indices++] = index_result;
             } break;
 
             default:

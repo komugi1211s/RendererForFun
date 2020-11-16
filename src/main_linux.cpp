@@ -68,7 +68,7 @@ void update_camera_with_input(Camera *camera, Input *input, real32 dt) {
 }
 
 void update_xwindow_with_drawbuffer(Display *display, Window window, GC context, Drawing_Buffer *buffer) {
-    uint32 *drawing_buffer = buffer->is_drawing_first ? buffer->first_buffer : buffer->second_buffer;
+    uint32 *drawing_buffer = buffer->back_buffer;
 
     XImage image;
     image.width  = buffer->window_width;
@@ -125,12 +125,17 @@ bool32 load_simple_model(const char *model_name, Model *model) {
         size_t file_length = ftell(file);
         fseek(file, 0, SEEK_SET);
 
-        char *buffer    = (char *)malloc(file_length + 1);
-        model->vertices = (fVector3 *)malloc(file_length * sizeof(fVector3));
-        model->texcoords = (fVector3 *)malloc(file_length * sizeof(fVector3));
-        model->indexes  = (ModelIndex *)malloc(file_length * sizeof(ModelIndex));
+        // TODO(fuzzy): @MemoryLeak
+        // Modelに渡されるデータは全部フリーされずにずっと残ったままになるので、
+        // 新しいモデルをロードする機能の実装を行う際は**必ず**アロケーターを先に書くこと。
 
-        ASSERT(buffer || model->vertices || model->texcoords || model->indexes);
+        char *buffer     = (char *)malloc(file_length + 1);
+        model->vertices  = (fVector3 *)malloc(file_length * sizeof(fVector3));
+        model->texcoords = (fVector3 *)malloc(file_length * sizeof(fVector3));
+        model->normals   = (fVector3 *)malloc(file_length * sizeof(fVector3));
+        model->face_indices = (FaceId *)malloc(file_length * sizeof(FaceId));
+
+        ASSERT(buffer || model->vertices || model->texcoords || model->face_indices);
         fread(buffer, 1, file_length, file);
         fclose(file);
 
@@ -141,7 +146,8 @@ bool32 load_simple_model(const char *model_name, Model *model) {
         if(!parsed) {
             free(model->vertices);
             free(model->texcoords);
-            free(model->indexes);
+            free(model->normals);
+            free(model->face_indices);
 
             TRACE("Failed to Load model.");
             return 0;
@@ -252,7 +258,7 @@ int main(int argc, char **argv) {
                     hint.min_height = hint.max_height = window_height;
                     XSetWMNormalHints(display, my_window, &hint);
                 }
-                GC context = XCreateGC(display, my_window, 0, 0);
+                GC context = XCreateGC(display, my_window, 0, 0); // LEAK(fuzzy): 終了時XFreeGCがいる
 
                 XMapWindow(display, my_window);
                 XFlush(display);
@@ -295,9 +301,9 @@ int main(int argc, char **argv) {
                 char *main_buffer_allocation = (char *)malloc(color_buffer_size * 2);
                 char *z_buffer_allocation = (char *)malloc(z_buffer_size);
 
-                buffer.first_buffer  = (uint32 *)main_buffer_allocation;
-                buffer.second_buffer = (uint32 *)(main_buffer_allocation + color_buffer_size);
-                buffer.z_buffer      = (real32 *)z_buffer_allocation;
+                buffer.visible_buffer  = (uint32 *)main_buffer_allocation;
+                buffer.back_buffer     = (uint32 *)(main_buffer_allocation + color_buffer_size);
+                buffer.z_buffer        = (real32 *)z_buffer_allocation;
 
                 Input input = {0};
 
@@ -322,9 +328,10 @@ int main(int argc, char **argv) {
 
                 bool32 draw_z_buffer = 0;
                 bool32 draw_wireframe = 0;
+                clear_buffer(&buffer, CLEAR_COLOR_BUFFER | CLEAR_Z_BUFFER);
 
                 while (running) {
-                    clear_buffer(&buffer, bg);
+                    clear_buffer(&buffer, CLEAR_COLOR_BUFFER | CLEAR_Z_BUFFER);
 
                     clock_gettime(CLOCK_MONOTONIC_RAW, &_timespec_now);
                     start_time = (_timespec_now.tv_sec * time_frequency) + _timespec_now.tv_nsec;
@@ -406,12 +413,14 @@ int main(int argc, char **argv) {
 
                     if (!input.debug_menu_key) update_camera_with_input(&camera, &input, 0.016);
 
-                    if (draw_z_buffer) {
-                        DEBUG_render_z_buffer(&buffer);
-                    } else if (draw_wireframe) {
+                    if (draw_wireframe) {
                         draw_wire_model(&buffer, &model, &camera, c);
                     } else {
                         draw_textured_model(&buffer, &model, &camera, &texture);
+                    }
+
+                    if (draw_z_buffer) {
+                        DEBUG_render_z_buffer(&buffer);
                     }
 
                     if (input.debug_menu_key) {
@@ -474,8 +483,16 @@ int main(int argc, char **argv) {
                     start_cycle = end_cycle;
                 }
 
-                free(buffer.first_buffer);
+                // NOTE(fuzzy):
+                // 現在想定している動作環境だとここに到達した時点でプロセスは終了直前なので
+                // わざわざfreeを呼ばずにOSに全部後処理をさせたほうが良いかもしれない
+                //
+                // あまりいいPracticeでは無いのは分かっているが、現在モデル・テクスチャ・バッファなど色々アロケーションがあり
+                // どの道暫くしたら（いつ？）適当なアロケーターに全てを管理させる予定なので
+                // その時まで触れないことにする。
+                free(buffer.visible_buffer > buffer.back_buffer ? buffer.back_buffer : buffer.visible_buffer);
                 free(buffer.z_buffer);
+
                 XCloseDisplay(display);
             } else {
                 TRACE("Failed to Open Window.");

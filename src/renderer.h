@@ -15,12 +15,12 @@ global_variable bool32  mvp_precomputed;
 typedef struct Drawing_Buffer {
     int32 window_width;
     int32 window_height;
-    
+
     int32 depth;
     bool32 is_drawing_first;
-    
-    uint32 *first_buffer;
-    uint32 *second_buffer;
+
+    uint32 *visible_buffer;
+    uint32 *back_buffer;
     real32 *z_buffer;
 } Drawing_Buffer;
 
@@ -28,7 +28,7 @@ typedef struct Camera {
     fVector3 position;
     fVector3 target;
     fVector3 up;
-    
+
     real32 fov;
     real32 aspect_ratio;
     real32 z_near;
