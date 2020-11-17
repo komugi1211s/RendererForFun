@@ -21,7 +21,7 @@ void clear_buffer(Drawing_Buffer *buffer, uint32 clear_mode) {
 
     if ((clear_mode & CLEAR_Z_BUFFER)) {
         // これ以上遠ければクリップされる
-        real32 z_buffer_furthest = 255;
+        real32 z_buffer_furthest = 255.0;
         for (int32 i = 0; i < total_size; ++i) {
             buffer->z_buffer[i] = z_buffer_furthest;
         }
@@ -84,10 +84,9 @@ void DEBUG_render_z_buffer(Drawing_Buffer *buffer) {
     for (int32 y = 0; y < buffer->window_height; ++y) {
         for(int32 x = 0; x < buffer->window_width; ++x) {
             int32 z_buffer_position = x + y * buffer->window_width;
-            uint8 z_val = (uint32)ceil(MATHS_MIN(MATHS_MAX(0.0, buffer->z_buffer[z_buffer_position]), 254.0));
+            uint8 z_val = static_cast<uint8>(ceil(MATHS_MIN(MATHS_MAX(0.0, buffer->z_buffer[z_buffer_position]), 254.0)));
 
             uint32 result = (z_val << 16 | z_val << 8 | z_val);
-
             buf[z_buffer_position] = result;
         }
     }
@@ -391,6 +390,7 @@ void draw_textured_model(Drawing_Buffer *buffer, Model *model, Camera *camera, T
     PROFILE_FUNC;
     fVector3 AB, AC;
     fVector3 surface_normal;
+    real32 culling_result;
     fMat4x4 mvp = create_mvp_matrix(camera);
 
     for (size_t i = 0; i < model->num_face_indices; ++i) {
@@ -424,8 +424,11 @@ void draw_textured_model(Drawing_Buffer *buffer, Model *model, Camera *camera, T
             // Back-face Culling
             // 既に頂点はView Spaceにある為、-V0.N >= 0 を計算する
             surface_normal = fnormalize_fv3(fcross_fv3(AC, AB));
-            real32 culling_result = -fdot_fv3(face.vertices[0], surface_normal);
-            if(culling_result < 0) continue;
+            culling_result = -fdot_fv3(face.vertices[0], surface_normal);
+            if(culling_result < 0) {
+                TRACE("Culling: %f", culling_result);
+                continue;
+            }
 
             project_viewport(face.vertices, buffer->window_width,
                              buffer->window_height);
@@ -483,14 +486,6 @@ void draw_wire_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Color
         do_not_render_and_go_next_triangles_wireframe:;
     }
 }
-
-typedef struct DEBUGCharacterBitmap {
-    uint8 *allocated;
-    int32 width, height, x_off, y_off;
-} DEBUGCharacterBitmap;
-
-#define BITMAP_ARRAY_SIZE 1024
-global_variable DEBUGCharacterBitmap bitmap_array[BITMAP_ARRAY_SIZE] = {0}; // THIS IS TOO STUPID
 
 void draw_text(Drawing_Buffer *buffer, FontData *font, int32 start_x, int32 start_y, char *text) {
     PROFILE_FUNC;

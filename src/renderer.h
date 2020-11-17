@@ -40,6 +40,13 @@ typedef struct Camera {
 global_variable const uint32 CLEAR_COLOR_BUFFER = 1 << 1;
 global_variable const uint32 CLEAR_Z_BUFFER     = 1 << 2;
 
+typedef struct DEBUGCharacterBitmap {
+    uint8 *allocated;
+    int32 width, height, x_off, y_off;
+} DEBUGCharacterBitmap;
+
+#define BITMAP_ARRAY_SIZE 1024
+global_variable DEBUGCharacterBitmap bitmap_array[BITMAP_ARRAY_SIZE] = {0}; // THIS IS TOO STUPID
 
 // TODO(fuzzy):
 // RGB/BGR format.
@@ -60,6 +67,7 @@ void draw_wire_rectangle(Drawing_Buffer *buffer, real32 x0, real32 y0, real32 x1
 void draw_filled_rectangle(Drawing_Buffer *buffer, real32 x0, real32 y0, real32 x1, real32 y1, Color color);
 void DEBUG_render_z_buffer(Drawing_Buffer *buffer);
 
+void draw_gizmo_to_origin(Drawing_Buffer *buffer, Camera *camera);
 fMat4x4 create_mvp_matrix(Camera *cam);
 
 void draw_text(Drawing_Buffer *buffer, FontData *font_data, int32 x, int32 y, char *Text);
