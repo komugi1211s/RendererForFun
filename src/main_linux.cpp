@@ -55,11 +55,11 @@ void update_camera_with_input(Camera *camera, Input *input, real32 dt) {
     camera->yaw   += (dx * sensitivity);
     camera->pitch -= (dy * sensitivity);
 
-    camera->pitch = MATHS_MAX(-89.0, MATHS_MIN(89.0, camera->pitch));
+    camera->pitch = FP_MAX(-89.0, FP_MIN(89.0, camera->pitch));
 
     real32 rad_yaw, rad_pitch;
-    rad_yaw = MATHS_DEG2RAD(camera->yaw);
-    rad_pitch = MATHS_DEG2RAD(camera->pitch);
+    rad_yaw = FP_DEG2RAD(camera->yaw);
+    rad_pitch = FP_DEG2RAD(camera->pitch);
 
     camera->target.x = cosf(rad_yaw) * cosf(rad_pitch);
     camera->target.y = sinf(rad_pitch);
@@ -416,7 +416,7 @@ int main(int argc, char **argv) {
                     if (draw_wireframe) {
                         draw_wire_model(&buffer, &model, &camera, c);
                     } else {
-                        draw_textured_model(&buffer, &model, &camera, &texture);
+                        draw_filled_model(&buffer, &model, &camera, c);
                     }
 
                     if (draw_z_buffer) {

@@ -22,7 +22,6 @@ typedef uint64_t  uint64;
 typedef float     real32;
 typedef double    real64;
 
-typedef size_t    size;
 typedef intptr_t  iptr;
 typedef uintptr_t uptr;
 

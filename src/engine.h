@@ -89,4 +89,108 @@ Color rgb_opaque(real32 r, real32 g, real32 b) {
     return result;
 }
 
+
+typedef struct TempArena TempArena;
+
+typedef struct Arena {
+    size_t capacity;
+    size_t used;
+    uint8  *data;
+
+    size_t original_capacity;
+
+    Arena(uint8 *storage_ptr, size_t storage_capacity) {
+        original_capacity = storage_capacity;
+        capacity          = storage_capacity;
+        data = storage_ptr;
+        used = 0;
+    }
+
+    uint8    *alloc(size_t allocation_size);
+    TempArena temparena(size_t temparena_size);
+} Arena;
+
+typedef struct TempArena {
+    size_t  capacity;
+    size_t  used;
+    uint8   *data;
+
+    Arena   *derived_from;
+
+    uint8 *alloc(size_t allocation_size);
+    void close();
+} TempArena;
+
+global_variable const size_t MEMORY_ALIGNMENT = 16;
+
+uptr align_pointer_forward(uptr unaligned) {
+    uptr modulo = (unaligned & (MEMORY_ALIGNMENT - 1));
+    uptr aligned = unaligned;
+
+    if (modulo != 0) {
+        aligned += MEMORY_ALIGNMENT - modulo;
+    }
+
+    return aligned;
+}
+
+uint8 *Arena::alloc(size_t allocation_size) {
+    uptr pointer = (uptr)(this->data + this->used);
+    uptr aligned_pointer = align_pointer_forward(pointer);
+
+    if (aligned_pointer > pointer) {
+        allocation_size += (size_t)(aligned_pointer - pointer);
+    }
+
+    ASSERT((this->used + allocation_size) < this->capacity);
+
+    uint8 *heap_memory = (uint8 *)aligned_pointer;
+    this->used += allocation_size;
+
+    return heap_memory;
+}
+
+TempArena Arena::temparena(size_t temparena_size) {
+    ASSERT((this->used + temparena_size) < this->capacity);
+    uptr pointer = (uptr)((this->data + this->capacity) - temparena_size);
+
+    uint8 modulo = (pointer & (MEMORY_ALIGNMENT - 1));
+    if (modulo > 0) {
+        pointer -= modulo;
+        temparena_size += modulo;
+    }
+
+    TempArena temparena;
+    temparena.capacity = temparena_size;
+    temparena.used = 0;
+    temparena.data = (uint8 *)pointer;
+    temparena.derived_from = this;
+
+    this->capacity -= temparena_size;
+    return temparena;
+}
+
+uint8 *TempArena::alloc(size_t allocation_size) {
+    uptr pointer = (uptr)(this->data + this->used);
+    uptr aligned_pointer = align_pointer_forward(pointer);
+
+    if (aligned_pointer > pointer) {
+        allocation_size += (size_t)(aligned_pointer - pointer);
+    }
+
+    ASSERT((this->used + allocation_size) < this->capacity);
+
+    uint8 *heap_memory = (uint8 *)aligned_pointer;
+    this->used += allocation_size;
+
+    return heap_memory;
+}
+
+void TempArena::close() {
+    this->derived_from->capacity += this->capacity;
+    this->data = NULL;
+    this->used = 0;
+    this->capacity = 0;
+}
+
 #endif

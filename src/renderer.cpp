@@ -29,10 +29,10 @@ void clear_buffer(Drawing_Buffer *buffer, uint32 clear_mode) {
 }
 
 void draw_line(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, Color color) {
-    x0 = MATHS_MAX(0, MATHS_MIN(x0, buffer->window_width));
-    x1 = MATHS_MAX(0, MATHS_MIN(x1, buffer->window_width));
-    y0 = MATHS_MAX(0, MATHS_MIN(y0, buffer->window_height - 1));
-    y1 = MATHS_MAX(0, MATHS_MIN(y1, buffer->window_height - 1));
+    x0 = FP_MAX(0, FP_MIN(x0, buffer->window_width));
+    x1 = FP_MAX(0, FP_MIN(x1, buffer->window_width));
+    y0 = FP_MAX(0, FP_MIN(y0, buffer->window_height - 1));
+    y1 = FP_MAX(0, FP_MIN(y1, buffer->window_height - 1));
 
     uint32 *buf = buffer->back_buffer;
 
@@ -84,7 +84,7 @@ void DEBUG_render_z_buffer(Drawing_Buffer *buffer) {
     for (int32 y = 0; y < buffer->window_height; ++y) {
         for(int32 x = 0; x < buffer->window_width; ++x) {
             int32 z_buffer_position = x + y * buffer->window_width;
-            uint8 z_val = static_cast<uint8>(ceil(MATHS_MIN(MATHS_MAX(0.0, buffer->z_buffer[z_buffer_position]), 254.0)));
+            uint8 z_val = static_cast<uint8>(ceil(FP_MIN(FP_MAX(0.0, buffer->z_buffer[z_buffer_position]), 254.0)));
 
             uint32 result = (z_val << 16 | z_val << 8 | z_val);
             buf[z_buffer_position] = result;
@@ -164,10 +164,10 @@ void draw_filled_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVecto
     bool32 triangle_is_degenerate = fabsf(det_T) < 1;
 
     if (!triangle_is_degenerate) {
-        int32 y_min = (int32)MATHS_MAX(floor(bd_box.min_v.y), 0);
-        int32 y_max = (int32)MATHS_MIN(ceil(bd_box.max_v.y), buffer->window_height-1);
-        int32 x_min = (int32)MATHS_MAX(floor(bd_box.min_v.x), 0);
-        int32 x_max = (int32)MATHS_MIN(ceil(bd_box.max_v.x), buffer->window_width-1);
+        int32 y_min = (int32)FP_MAX(floor(bd_box.min_v.y), 0);
+        int32 y_max = (int32)FP_MIN(ceil(bd_box.max_v.y), buffer->window_height-1);
+        int32 x_min = (int32)FP_MAX(floor(bd_box.min_v.x), 0);
+        int32 x_max = (int32)FP_MIN(ceil(bd_box.max_v.x), buffer->window_width-1);
 
         for(int32 y = y_min; y < y_max; ++y) {
             PA.y = y - A.y;
@@ -235,10 +235,10 @@ void draw_textured_triangle(Drawing_Buffer *buffer,
     bool32 triangle_is_degenerate = fabsf(det_T) < 1;
 
     if (!triangle_is_degenerate) {
-        int32 y_min = (int32)MATHS_MAX(floor(bd_box.min_v.y), 0);
-        int32 y_max = (int32)MATHS_MIN(ceil(bd_box.max_v.y), buffer->window_height-1);
-        int32 x_min = (int32)MATHS_MAX(floor(bd_box.min_v.x), 0);
-        int32 x_max = (int32)MATHS_MIN(ceil(bd_box.max_v.x), buffer->window_width-1);
+        int32 y_min = (int32)FP_MAX(floor(bd_box.min_v.y), 0);
+        int32 y_max = (int32)FP_MIN(ceil(bd_box.max_v.y), buffer->window_height-1);
+        int32 x_min = (int32)FP_MAX(floor(bd_box.min_v.x), 0);
+        int32 x_max = (int32)FP_MIN(ceil(bd_box.max_v.x), buffer->window_width-1);
 
         for(int32 y = y_min; y < y_max; ++y) {
             PA.y = y - A.y;
@@ -563,7 +563,7 @@ fMat4x4 create_mvp_matrix(Camera *cam) {
     lookat.row[2].col[2] = z.z;
     lookat.row[2].col[3] = -fdot_fv3(z, cam->position);
 
-    real32 tan_fov = tan(MATHS_DEG2RAD(cam->fov) / 2.0);
+    real32 tan_fov = tan(FP_DEG2RAD(cam->fov) / 2.0);
     fMat4x4 proj = {0};
 
     proj.row[0].col[0] = 1.0f / (cam->aspect_ratio * tan_fov);
