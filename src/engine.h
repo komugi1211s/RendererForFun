@@ -1,6 +1,112 @@
 #ifndef _K_ENGINE_H
 #define _K_ENGINE_H
 
+/*
+ * =========================================
+ * Memory stuff.
+ * =========================================
+ * */
+
+global_variable const size_t MEMORY_ALIGNMENT = 16;
+
+uptr align_pointer_forward(uptr unaligned) {
+    uptr modulo = (unaligned & (MEMORY_ALIGNMENT - 1));
+    uptr aligned = unaligned;
+
+    if (modulo != 0) {
+        aligned += MEMORY_ALIGNMENT - modulo;
+    }
+
+    return aligned;
+}
+
+typedef struct TempArena TempArena;
+
+typedef struct Arena {
+    size_t capacity;
+    size_t used;
+    uint8  *data;
+    size_t original_capacity;
+    bool32 temparena_is_present;
+
+    Arena(uint8 *storage_ptr, size_t storage_capacity) {
+        original_capacity = storage_capacity;
+        capacity          = storage_capacity;
+        data = storage_ptr;
+        used = 0;
+        temparena_is_present = 0;
+    }
+
+    uint8    *alloc(size_t allocation_size);
+    TempArena temparena(size_t temparena_size);
+} Arena;
+
+typedef struct TempArena {
+    size_t  capacity;
+    size_t  used;
+    uint8   *data;
+    Arena   *derived_from;
+
+    uint8 *alloc(size_t allocation_size);
+    void close();
+} TempArena;
+
+/*
+ * =========================================
+ * Profiler Stuff.
+ * =========================================
+ * */
+
+#define PROFILE_INFO_MAX_SIZE 255
+
+/*
+ * 一番頻繁に使うProfilerマクロ。
+ *
+ * 以下のようにしてブロックの計算時間を測るか
+ * PROFILE("some expensive stuff") {
+ *   ... expensive stuff ...
+ * }
+ *
+ * 以下のようにして関数まるごと測れる
+ * void func() {
+ *   PROFILE_FUNC
+ *   ... expensive computation stuff...
+ * }
+ * */
+
+#define PROFILE(name) for(int i##__LINE__ = (profile_begin(name), 0); i##__LINE__ < 1; i##__LINE__ = (profile_end(name), 1))
+#define PROFILE_FUNC          auto _profile_##__LINE__ = ProfileScope(__func__);
+
+void profile_begin(const char *name);
+void profile_end(const char *name);
+
+typedef struct ProfileInfo {
+    const char  *name;
+    uint64 cycle_count;
+    uint64 cycle_elapsed;
+    bool32 is_started;
+} ProfileInfo;
+
+global_variable ProfileInfo profile_info[PROFILE_INFO_MAX_SIZE] = {0};
+global_variable size_t      profile_info_count = 0;
+
+typedef struct ProfileScope {
+    char *name;
+
+    ProfileScope(const char *n) {
+        name = (char *)n;
+        profile_begin(name);
+    }
+    ~ProfileScope() {
+        profile_end(name);
+    }
+} ProfileScope;
+
+/*
+ * =========================================
+ * General Engine Stuff.
+ * =========================================
+ * */
 typedef struct MouseInput {
     real32 x, y;
     bool32 left, right;
@@ -24,6 +130,8 @@ typedef struct FontData {
 
 typedef struct Color {
     real32 r, g, b, a;
+
+    uint32 pack();
 
     uint32 to_uint32_argb() {
         uint8 u8r, u8g, u8b, u8a;
@@ -87,110 +195,6 @@ Color rgb_opaque(real32 r, real32 g, real32 b) {
     result.a = 1.0;
 
     return result;
-}
-
-
-typedef struct TempArena TempArena;
-
-typedef struct Arena {
-    size_t capacity;
-    size_t used;
-    uint8  *data;
-
-    size_t original_capacity;
-
-    Arena(uint8 *storage_ptr, size_t storage_capacity) {
-        original_capacity = storage_capacity;
-        capacity          = storage_capacity;
-        data = storage_ptr;
-        used = 0;
-    }
-
-    uint8    *alloc(size_t allocation_size);
-    TempArena temparena(size_t temparena_size);
-} Arena;
-
-typedef struct TempArena {
-    size_t  capacity;
-    size_t  used;
-    uint8   *data;
-
-    Arena   *derived_from;
-
-    uint8 *alloc(size_t allocation_size);
-    void close();
-} TempArena;
-
-global_variable const size_t MEMORY_ALIGNMENT = 16;
-
-uptr align_pointer_forward(uptr unaligned) {
-    uptr modulo = (unaligned & (MEMORY_ALIGNMENT - 1));
-    uptr aligned = unaligned;
-
-    if (modulo != 0) {
-        aligned += MEMORY_ALIGNMENT - modulo;
-    }
-
-    return aligned;
-}
-
-uint8 *Arena::alloc(size_t allocation_size) {
-    uptr pointer = (uptr)(this->data + this->used);
-    uptr aligned_pointer = align_pointer_forward(pointer);
-
-    if (aligned_pointer > pointer) {
-        allocation_size += (size_t)(aligned_pointer - pointer);
-    }
-
-    ASSERT((this->used + allocation_size) < this->capacity);
-
-    uint8 *heap_memory = (uint8 *)aligned_pointer;
-    this->used += allocation_size;
-
-    return heap_memory;
-}
-
-TempArena Arena::temparena(size_t temparena_size) {
-    ASSERT((this->used + temparena_size) < this->capacity);
-    uptr pointer = (uptr)((this->data + this->capacity) - temparena_size);
-
-    uint8 modulo = (pointer & (MEMORY_ALIGNMENT - 1));
-    if (modulo > 0) {
-        pointer -= modulo;
-        temparena_size += modulo;
-    }
-
-    TempArena temparena;
-    temparena.capacity = temparena_size;
-    temparena.used = 0;
-    temparena.data = (uint8 *)pointer;
-    temparena.derived_from = this;
-
-    this->capacity -= temparena_size;
-    return temparena;
-}
-
-uint8 *TempArena::alloc(size_t allocation_size) {
-    uptr pointer = (uptr)(this->data + this->used);
-    uptr aligned_pointer = align_pointer_forward(pointer);
-
-    if (aligned_pointer > pointer) {
-        allocation_size += (size_t)(aligned_pointer - pointer);
-    }
-
-    ASSERT((this->used + allocation_size) < this->capacity);
-
-    uint8 *heap_memory = (uint8 *)aligned_pointer;
-    this->used += allocation_size;
-
-    return heap_memory;
-}
-
-void TempArena::close() {
-    this->derived_from->capacity += this->capacity;
-    this->data = NULL;
-    this->used = 0;
-    this->capacity = 0;
 }
 
 #endif

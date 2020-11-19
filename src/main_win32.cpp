@@ -1,10 +1,8 @@
 
-// NOTE(fuzzy): this is here just for the sake of convenience.
-// I'll replace this to something else eventually.
-// #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
-// #include <cimgui.h>
 #include <string.h>
 #include <math.h>
+#include <intrin.h>
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <windowsx.h>
@@ -15,9 +13,8 @@
 
 #include "general.h"
 #include "3rdparty.h"
-#include "engine.h"
 
-#include "profile.cpp"
+#include "engine.cpp"
 #include "maths.cpp"
 #include "model.cpp"
 #include "renderer.cpp"

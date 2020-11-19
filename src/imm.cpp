@@ -11,7 +11,14 @@ int32 _imm_get_text_width(char *text) {
         int32 advance, lsb;
         stbtt_GetCodepointHMetrics(&imm_font->font_info, chara,
                                    &advance, &lsb);
+
         x += ((real32)(advance + lsb)) * char_scale;
+        if (*(t + 1) != '\0') {
+            int32 kern = stbtt_GetCodepointKernAdvance(&imm_font->font_info,
+                                                       chara,
+                                                       *(t + 1));
+            x += (kern * char_scale);
+        }
     }
     return (int32)ceil(x);
 }
@@ -36,10 +43,12 @@ bool32 imm_draw_text_button(Drawing_Buffer *buffer,
     } else {
         width = text_width;
     }
-    int32 padding = width / 4;
+
+    int32 padding = (width / 2);
+    int32 txt_x = (width + padding - text_width) / 2;
 
     int32 x0 = x;
-    int32 x1 = x + width + (padding * 2);
+    int32 x1 = (x + width + padding);
     int32 y0 = y;
     int32 y1 = y + height;
 
@@ -55,10 +64,11 @@ bool32 imm_draw_text_button(Drawing_Buffer *buffer,
             pressed = 1;
         }
     }
-    draw_filled_rectangle(buffer, x0, y0, x1, y1, color);
-    draw_text(buffer, imm_font, x0 + padding, y0, text);
 
-    if (actual_width) *actual_width = (width + padding * 2);
+    draw_filled_rectangle(buffer, x0, y0, x1, y1, color);
+    draw_text(buffer, imm_font, x0 + txt_x, y0, text);
+
+    if (actual_width) *actual_width = (width + padding);
     return pressed;
 }
 
@@ -70,10 +80,14 @@ void   imm_draw_text_slider(Drawing_Buffer *buffer,
                             real32 *output_value)
 {
     if (!_imm_can_draw()) return;
-    int32 padding = width / 4;
+
+    int32 padding = (width / 2);
+    int32 text_width = _imm_get_text_width(text);
+
+    int32 txt_x = (width + padding - text_width) / 2;
 
     int32 x0 = x;
-    int32 x1 = x + width + (padding * 2);
+    int32 x1 = (x + width + padding);
     int32 y0 = y;
     int32 y1 = y + height;
 
@@ -95,7 +109,14 @@ void   imm_draw_text_slider(Drawing_Buffer *buffer,
     int32 x_slider_pos = (x0 * (1.0 - percentage)) + (x1 * percentage);
 
     draw_filled_rectangle(buffer, x0, y0, x1, y1, color);
-    draw_text(buffer, imm_font, x0 + padding, y0, text);
-    draw_filled_rectangle(buffer, x_slider_pos - 2, y0, x_slider_pos + 1, y1, rgb_opaque(0.8, 0.8, 0.8));
+    draw_text(buffer, imm_font, x0 + txt_x, y0, text);
+    draw_filled_rectangle(buffer, x_slider_pos - 1, y0, x_slider_pos + 1, y1, rgb_opaque(0.8, 0.8, 0.8));
     return;
 }
+
+void imm_draw_rect_category(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1) { // Basically for separator / category.
+    if (!_imm_can_draw()) return;
+    draw_filled_rectangle(buffer, x0, y0, x1, y1, imm_style.bg_color);
+}
+
+

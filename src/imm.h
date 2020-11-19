@@ -52,5 +52,11 @@ void   imm_draw_text_slider(Drawing_Buffer *buffer,
                             char *text,
                             real32 min_value, real32 max_value,
                             real32 *output_value);
+
+void   imm_draw_rect_category(Drawing_Buffer *buffer,
+                              int32 x0, int32 y0,
+                              int32 x1, int32 y1);
+
+void   imm_draw_textinput(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, char *buffer, size_t buffer_range);
 #endif // _K_IMM_H
 #endif // STB_TRUETYPE_IMPLEMENTATION

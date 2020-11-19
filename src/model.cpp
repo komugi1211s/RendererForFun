@@ -24,18 +24,18 @@ bool32 Model::load_face(size_t index, Face *output) {
     // ここはASSERTで強制失敗するべきか、それともロードできない体を伝えるべきか？
     // モデルの正常なロードに失敗しているのであればAssertで強制失敗させても良い気もする。
 
-    if ((indexes.vertex.x - 1) > this->num_vertices) return 0;
-    if ((indexes.vertex.y - 1) > this->num_vertices) return 0;
-    if ((indexes.vertex.z - 1) > this->num_vertices) return 0;
+    ASSERT((indexes.vertex.x - 1) < this->num_vertices);
+    ASSERT((indexes.vertex.y - 1) < this->num_vertices);
+    ASSERT((indexes.vertex.z - 1) < this->num_vertices);
 
     output->vertices[0] = this->vertices[indexes.vertex.x - 1];
     output->vertices[1] = this->vertices[indexes.vertex.y - 1];
     output->vertices[2] = this->vertices[indexes.vertex.z - 1];
 
     if (indexes.texcoord.x != 0) { // NOTE(fuzzy): 0始まりは有り得ない
-        if ((indexes.texcoord.x - 1) > this->num_texcoords) return 0;
-        if ((indexes.texcoord.y - 1) > this->num_texcoords) return 0;
-        if ((indexes.texcoord.z - 1) > this->num_texcoords) return 0;
+        ASSERT((indexes.texcoord.x - 1) < this->num_texcoords);
+        ASSERT((indexes.texcoord.y - 1) < this->num_texcoords);
+        ASSERT((indexes.texcoord.z - 1) < this->num_texcoords);
 
         output->texcoords[0] = this->texcoords[indexes.texcoord.x - 1];
         output->texcoords[1] = this->texcoords[indexes.texcoord.y - 1];
@@ -45,9 +45,9 @@ bool32 Model::load_face(size_t index, Face *output) {
     }
 
     if (indexes.normal.x != 0) {
-        if ((indexes.normal.x - 1) > this->num_normals) return 0;
-        if ((indexes.normal.y - 1) > this->num_normals) return 0;
-        if ((indexes.normal.z - 1) > this->num_normals) return 0;
+        ASSERT((indexes.normal.x - 1) < this->num_normals);
+        ASSERT((indexes.normal.y - 1) < this->num_normals);
+        ASSERT((indexes.normal.z - 1) < this->num_normals);
 
         output->normals[0] = this->normals[indexes.normal.x - 1];
         output->normals[1] = this->normals[indexes.normal.y - 1];

@@ -6,6 +6,8 @@
 #include <math.h>
 #include <time.h>
 #include <stdarg.h>
+#include <x86intrin.h>
+
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #define STB_IMAGE_IMPLEMENTATION
@@ -13,7 +15,8 @@
 
 #include "general.h"
 #include "3rdparty.h"
-#include "profile.cpp"
+#include "engine.cpp"
+
 #include "maths.cpp"
 #include "model.cpp"
 #include "renderer.cpp"
@@ -178,11 +181,11 @@ char *format(const char * __restrict message, ...) {
     return bucket;
 }
 
-void draw_debug_menu(Drawing_Buffer *buffer, Input *input, FontData *font_data, Camera *camera, Model *model, real32 ms_per_frame, real32 fps, uint64 cycle_elapsed) {
+void draw_debug_info(Drawing_Buffer *buffer, Input *input, FontData *font_data, Camera *camera, Model *model, real32 ms_per_frame, real32 fps, uint64 cycle_elapsed) {
     Color box_color = rgba(0.1, 0.1, 0.1, 0.2);
-    draw_filled_rectangle(buffer, 10, 50, 600, 300, box_color);
+    draw_filled_rectangle(buffer, 5, 50, 500, 300, box_color);
 
-    int32 x = 20;
+    int32 x = 10;
     int32 y = 60;
     for (int32 i = 0; i < profile_info_count; ++i) {
         draw_text(buffer, font_data, x, y, format("[%d] %s | %lu cy", i, profile_info[i].name, profile_info[i].cycle_elapsed));
@@ -190,15 +193,13 @@ void draw_debug_menu(Drawing_Buffer *buffer, Input *input, FontData *font_data, 
     }
     y += 10;
     draw_text(buffer, font_data, x, y, (char *)"Camera");
-    x += 40;
+    x += 10;
     y += 20;
     draw_text(buffer, font_data, x, y, format("Position: [%2f, %2f, %2f]", camera->position.x, camera->position.y, camera->position.z));
     y += 20;
     draw_text(buffer, font_data, x, y, format("LookAt:   [%2f, %2f, %2f]", camera->target.x, camera->target.y, camera->target.z));
     y += 20;
     draw_text(buffer, font_data, x, y, format("Yaw, Pitch: [%2f, %2f]", camera->yaw, camera->pitch));
-    y += 20;
-    x -= 40;
 }
 
 
@@ -273,7 +274,7 @@ int main(int argc, char **argv) {
                 }
 
                 ImmStyle default_style;
-                default_style.bg_color = rgba(0.25, 0.25, 0.25, 0.5);
+                default_style.bg_color = rgba(0.1, 0.1, 0.1, 0.5);
                 default_style.hot_color = rgba(0.50, 0.0, 0.0, 0.5);
                 default_style.active_color = rgba(0.0, 0.5, 0.0, 0.5);
 
@@ -424,15 +425,15 @@ int main(int argc, char **argv) {
                     }
 
                     if (input.debug_menu_key) {
-                        draw_debug_menu(&buffer, &input, &font_data, &camera, &model,
+                        draw_debug_info(&buffer, &input, &font_data, &camera, &model,
                                         ms_per_frame, fps, cycle_elapsed);
                         imm_begin(&font_data, &input);
                         imm_draw_top_bar(&buffer, buffer.window_width, 30);
 
                         int32 topbar_y_size = 30;
-                        int32 current_x = 0;
-                        int32 min_width = 120;
-                        int32 actual_width = 0;
+                        int32 current_x     = 0;
+                        int32 min_width     = 120;
+                        int32 actual_width  = 0;
                         {
                             char *name = (char *)"Reset Camera";
                             if(imm_draw_text_button(&buffer, current_x, 0, min_width, topbar_y_size, name, &actual_width)) {
@@ -462,6 +463,19 @@ int main(int argc, char **argv) {
                             imm_draw_text_slider(&buffer, current_x, 0, fixed_width, topbar_y_size, name, 0.0, 120.0, &camera.fov);
                             current_x += fixed_width;
                         }
+
+                        // Drawing Model Info / Menu.
+                        int32 y0 = window_height - 200;
+                        int32 y1 = window_height - 10;
+                        imm_draw_rect_category(&buffer, 10, y0, 600, y1);
+
+                        {
+                            char *name = (char *)"Load Model";
+                            if(imm_draw_text_button(&buffer, 20, y1 - 40, 100, 30, name, NULL)) {
+                                TRACE("Load Model!");
+                            }
+                        }
+
                         imm_end();
                     }
                     update_xwindow_with_drawbuffer(display, my_window, context, &buffer);

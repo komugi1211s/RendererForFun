@@ -1,8 +1,6 @@
 ﻿#include "maths.h"
 #include "renderer.h"
 
-#define USE_LINE_SWEEPING 0
-
 void swap_buffer(Drawing_Buffer *buffer) {
     uint32 *visible_buffer = buffer->visible_buffer;
     buffer->visible_buffer = buffer->back_buffer;
@@ -105,42 +103,6 @@ draw_bounding_box(Drawing_Buffer *buffer, BoundingBoxi2 box, Color color) {
     // from top right,   goes bottom side
     draw_line(buffer, box.max_v.x, box.min_v.y, box.max_v.x, box.max_v.y, color);
 
-}
-
-void _line_sweeping(Drawing_Buffer *buffer, iVector2 y_sm, iVector2 y_md, iVector2 y_bg, Color color) {
-    if (y_sm.y > y_md.y) { SWAPVAR(iVector2, y_sm, y_md); }
-    if (y_sm.y > y_bg.y) { SWAPVAR(iVector2, y_sm, y_bg); }
-    if (y_md.y > y_bg.y) { SWAPVAR(iVector2, y_md, y_bg); }
-
-    draw_line(buffer, y_sm.x, y_sm.y, y_md.x, y_md.y, color);
-    draw_line(buffer, y_sm.x, y_sm.y, y_bg.x, y_bg.y, color);
-    draw_line(buffer, y_md.x, y_md.y, y_bg.x, y_bg.y, color);
-
-    real32 top_half_distance    = (y_md.y - y_sm.y);
-    real32 total_distance       = (y_bg.y - y_sm.y);
-    real32 bottom_half_distance = (y_bg.y - y_md.y);
-
-    int32 x0, x1;
-    int32 y = y_sm.y;
-
-    for (; y < y_md.y; ++y) {
-        // Draw top half.
-        real32 total_dt    = (y - y_sm.y)  / total_distance;
-        real32 top_half_dt = (y - y_sm.y)  / top_half_distance;
-        x0 = (y_sm.x * (1.0 - top_half_dt)) + (top_half_dt * y_md.x);
-        x1 = (y_sm.x * (1.0 - total_dt)) + (total_dt * y_bg.x);
-
-        draw_line(buffer, x0, y, x1, y, color);
-    }
-
-    for (; y < y_bg.y; ++y) {
-        // Draw bottom Half.
-        real32 total_dt       = (y - y_sm.y) / total_distance;
-        real32 bottom_half_dt = (y - y_md.y) / bottom_half_distance;
-        x0 = (y_md.x *  (1.0 - bottom_half_dt)) + (bottom_half_dt * y_bg.x);
-        x1 = (y_sm.x  * (1.0 - total_dt)) + (total_dt * y_bg.x);
-        draw_line(buffer, x0, y, x1, y, color);
-    }
 }
 
 // NOTE(fuzzy):
@@ -306,12 +268,12 @@ void draw_wire_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3
     }
 }
 
-// I think I can do simd???
 void project_viewport(fVector3 world_space[3],
                       int32 window_width,
                       int32 window_height)
 {
     const real32 arbitary_depth = 255;
+
     for (int i = 0; i < 3; ++i) {
         world_space[i].x = ((1.0 + world_space[i].x) * 0.5) * window_width;
         world_space[i].y = ((1.0 + world_space[i].y) * 0.5) * window_height;
@@ -350,10 +312,8 @@ void draw_filled_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Col
         if (face_loaded) {
             for (int v = 0; v < 3; ++v) {
                 fVector4 fv4vert;
-                fv4vert.x = face.vertices[v].x;
-                fv4vert.y = face.vertices[v].y;
-                fv4vert.z = face.vertices[v].z;
-                fv4vert.w = 1.0;
+                fv4vert.xyz = face.vertices[v];
+                fv4vert.w  = 1.0;
                 fv4vert = fmul_fmat4x4_fv4(mvp, fv4vert);
 
                 if ((fv4vert.w < 0) || (fv4vert.z > fv4vert.w) || (fv4vert.z < -fv4vert.w)) {
@@ -400,9 +360,7 @@ void draw_textured_model(Drawing_Buffer *buffer, Model *model, Camera *camera, T
             ASSERT(face.has_texcoords);
             for (int v = 0; v < 3; ++v) {
                 fVector4 fv4vert;
-                fv4vert.x = face.vertices[v].x;
-                fv4vert.y = face.vertices[v].y;
-                fv4vert.z = face.vertices[v].z;
+                fv4vert.xyz = face.vertices[v];
                 fv4vert.w = 1.0;
                 fv4vert = fmul_fmat4x4_fv4(mvp, fv4vert);
 
@@ -456,9 +414,7 @@ void draw_wire_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Color
         if (face_loaded) {
             for (int v = 0; v < 3; ++v) {
                 fVector4 fv4vert;
-                fv4vert.x = face.vertices[v].x;
-                fv4vert.y = face.vertices[v].y;
-                fv4vert.z = face.vertices[v].z;
+                fv4vert.xyz = face.vertices[v];
                 fv4vert.w = 1.0;
                 fv4vert = fmul_fmat4x4_fv4(mvp, fv4vert);
 
@@ -500,7 +456,10 @@ void draw_text(Drawing_Buffer *buffer, FontData *font, int32 start_x, int32 star
             continue;
         }
         char character = *t;
-        int32 advance, lsb, x0, x1, y0, y1;
+        int32 advance = 0;
+        int32 lsb = 0;
+
+        int32 x0, x1, y0, y1;
         stbtt_GetCodepointHMetrics(&font->font_info, character, &advance, &lsb);
         stbtt_GetCodepointBitmapBox(&font->font_info, character, font->char_scale, font->char_scale,
                                     &x0, &y0, &x1, &y1);
@@ -514,24 +473,37 @@ void draw_text(Drawing_Buffer *buffer, FontData *font, int32 start_x, int32 star
                 bitmap_array[character] = bitmap;
             } else {
                 bitmap_array[character].allocated = NULL;
-                bitmap_array[character].width = -1;
+                bitmap_array[character].width  = -1;
                 bitmap_array[character].height = -1;
             }
         }
         bitmap = &bitmap_array[character];
 
-        x += (advance + lsb) * font->char_scale;
-        int32 position = (x + (y + y0) * buffer->window_width);
+        x += lsb * font->char_scale;
+        int32 position = ((x + x0) + (y + y0) * buffer->window_width);
 
-        if (bitmap->width < 0) continue;
-        for (int i = 0; i < bitmap->height; ++i) {
-            for (int j = 0; j < bitmap->width; ++j) {
-                if (bitmap->allocated[j + (i * bitmap->width)] > 0) {
-                    uint8 color = bitmap->allocated[j + (i * bitmap->width)];
-                    buf[position + (j + (i * buffer->window_width))] = (color << 16 | color << 8 | color);
+        int32 kern = 0;
+        if (*(t+1) != '\0') {
+            kern = stbtt_GetCodepointKernAdvance(&font->font_info,
+                                                 character,
+                                                 *(t + 1));
+        }
+
+        if (bitmap->width < 0) {
+            x += (advance + kern) * font->char_scale;
+            continue;
+        }
+
+        for (int i = 0; i < (y1 - y0); ++i) {
+            for (int j = 0; j < (x1 - x0); ++j) {
+                uint8 color = bitmap->allocated[j + (i * bitmap->width)];
+                if (color > 0) {
+                    buf[position + j + i * buffer->window_width] = (color << 24 | color << 16 | color << 8 | color);
                 }
             }
         }
+
+        x += (advance + kern) * font->char_scale;
     }
 }
 

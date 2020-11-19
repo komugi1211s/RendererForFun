@@ -20,19 +20,25 @@ typedef struct iVector2 {
     int32 __pad, __pad2;
 } iVector2;
 
-
 typedef struct iVector3 {
     int32 x, y, z, __pad;
 } iVector3;
 
-
-typedef struct fVector3 {
-    real32 x, y, z, __pad;
+typedef union fVector3 {
+    struct { real32 x, y, z; };
+    real32 e[3];
 } fVector3;
 
 
-typedef struct fVector4 {
-    real32 x, y, z, w;
+typedef union fVector4 {
+    struct {
+        union {
+            struct { real32 x, y, z; };
+            fVector3 xyz;
+        };
+        real32 w;
+    };
+    real32 e[4];
 } fVector4;
 
 
