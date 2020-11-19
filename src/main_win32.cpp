@@ -256,11 +256,11 @@ void update_camera_with_input(Camera *camera, Input *input, real32 dt) {
         camera->yaw   += (dx * sensitivity);
         camera->pitch -= (dy * sensitivity);
 
-        camera->pitch = MATHS_MAX(-89.0, MATHS_MIN(89.0, camera->pitch));
+        camera->pitch = FP_CLAMP(camera->pitch, -89.0, 89.0);
 
         real32 rad_yaw, rad_pitch;
-        rad_yaw = MATHS_DEG2RAD(camera->yaw);
-        rad_pitch = MATHS_DEG2RAD(camera->pitch);
+        rad_yaw = FP_DEG2RAD(camera->yaw);
+        rad_pitch = FP_DEG2RAD(camera->pitch);
 
         camera->target.x = cosf(rad_yaw) * cosf(rad_pitch);
         camera->target.y = sinf(rad_pitch);
@@ -337,6 +337,12 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             bitmap_info.bmiHeader.biBitCount = 32;
             bitmap_info.bmiHeader.biCompression = BI_RGB;
 
+            size_t core_memory_size = GIGABYTES(2);
+            void *memory = VirtualAlloc(0, core_memory_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+
+            Arena core_arena((uint8*)memory, core_memory_size);
+            
+
             drawing_buffer.window_width = window_width;
             drawing_buffer.window_height = window_height;
             drawing_buffer.depth = 32;
@@ -359,6 +365,8 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             }
             */
 
+
+
             ImmStyle default_style;
             default_style.bg_color = rgba(0.25, 0.25, 0.25, 0.5);
             default_style.hot_color = rgba(0.50, 0.0, 0.0, 0.5);
@@ -372,10 +380,9 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             size_t color_buffer_size = (window_width * window_height * sizeof(uint32));
             size_t z_buffer_size     = (window_width * window_height * sizeof(real32));
 
-            char *allocation = (char *)VirtualAlloc(0, color_buffer_size * 2, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-            drawing_buffer.visible_buffer = (uint32 *)allocation;
-            drawing_buffer.back_buffer    = (uint32 *)(allocation + color_buffer_size);
-            drawing_buffer.z_buffer = (real32 *)VirtualAlloc(0, z_buffer_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            drawing_buffer.visible_buffer = (uint32 *)core_arena.alloc(color_buffer_size);
+            drawing_buffer.back_buffer    = (uint32 *)core_arena.alloc(color_buffer_size);
+            drawing_buffer.z_buffer       = (real32 *)core_arena.alloc(z_buffer_size);
 
             ASSERT(drawing_buffer.visible_buffer && drawing_buffer.z_buffer);
             MSG message;
@@ -468,7 +475,17 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
                         imm_draw_text_slider(&drawing_buffer, current_x, 0, fixed_width, topbar_y_size, name, 0.0, 120.0, &camera.fov);
                         current_x += fixed_width;
                     }
+                    // Drawing Model Info / Menu.
+                    int32 y0 = window_height - 300;
+                    int32 y1 = window_height - 110;
+                    imm_draw_rect_category(&drawing_buffer, 10, y0, 600, y1);
 
+                    {
+                        char *name = (char *)"Load Model";
+                        if(imm_draw_text_button(&drawing_buffer, 20, y1 - 40, 100, 30, name, NULL)) {
+                            TRACE("Load Model!");
+                        }
+                    }
                     imm_end();
                 }
 
@@ -492,8 +509,8 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             VirtualFree(model.texcoords,      0, MEM_RELEASE);
             VirtualFree(model.normals,        0, MEM_RELEASE);
             VirtualFree(model.face_indices,   0, MEM_RELEASE);
-            VirtualFree(drawing_buffer.visible_buffer > drawing_buffer.back_buffer ? drawing_buffer.back_buffer : drawing_buffer.visible_buffer, 0, MEM_RELEASE);
-            VirtualFree(drawing_buffer.z_buffer,     0, MEM_RELEASE);
+
+            VirtualFree(core_arena.data, 0, MEM_RELEASE);
         } else {
             TRACE("CreateWindowEx failed.");
             BREAK

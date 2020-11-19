@@ -264,6 +264,12 @@ int main(int argc, char **argv) {
                 XMapWindow(display, my_window);
                 XFlush(display);
 
+
+                size_t core_memory_size = GIGABYTES(2);
+                void *memory = malloc(core_memory_size);
+
+                Arena core_arena((uint8*)memory, core_memory_size);
+
                 // =======================================
                 // レンダリングに必要な物全般をセットアップ
                 // =======================================
@@ -299,12 +305,11 @@ int main(int argc, char **argv) {
                 // 一つのアロケーションに全部叩き込む
                 size_t color_buffer_size = (window_width * window_height * sizeof(uint32));
                 size_t z_buffer_size     = (window_width * window_height * sizeof(real32));
-                char *main_buffer_allocation = (char *)malloc(color_buffer_size * 2);
-                char *z_buffer_allocation = (char *)malloc(z_buffer_size);
 
-                buffer.visible_buffer  = (uint32 *)main_buffer_allocation;
-                buffer.back_buffer     = (uint32 *)(main_buffer_allocation + color_buffer_size);
-                buffer.z_buffer        = (real32 *)z_buffer_allocation;
+
+                buffer.visible_buffer  = (uint32 *)core_arena.alloc(color_buffer_size);
+                buffer.back_buffer     = (uint32 *)core_arena.alloc(color_buffer_size);
+                buffer.z_buffer        = (real32 *)core_arena.alloc(z_buffer_size);
 
                 Input input = {0};
 
@@ -497,16 +502,7 @@ int main(int argc, char **argv) {
                     start_cycle = end_cycle;
                 }
 
-                // NOTE(fuzzy):
-                // 現在想定している動作環境だとここに到達した時点でプロセスは終了直前なので
-                // わざわざfreeを呼ばずにOSに全部後処理をさせたほうが良いかもしれない
-                //
-                // あまりいいPracticeでは無いのは分かっているが、現在モデル・テクスチャ・バッファなど色々アロケーションがあり
-                // どの道暫くしたら（いつ？）適当なアロケーターに全てを管理させる予定なので
-                // その時まで触れないことにする。
-                free(buffer.visible_buffer > buffer.back_buffer ? buffer.back_buffer : buffer.visible_buffer);
-                free(buffer.z_buffer);
-
+                free(core_arena.data);
                 XCloseDisplay(display);
             } else {
                 TRACE("Failed to Open Window.");

@@ -541,7 +541,7 @@ fMat4x4 create_mvp_matrix(Camera *cam) {
     proj.row[0].col[0] = 1.0f / (cam->aspect_ratio * tan_fov);
     proj.row[1].col[1] = 1.0f / tan_fov;
     proj.row[2].col[2] = -(cam->z_near + cam->z_far)      / (cam->z_far - cam->z_near);
-    proj.row[2].col[3] = (2.0 * cam->z_far * cam->z_near) / (cam->z_near - cam->z_far);
+    proj.row[2].col[3] = -(2.0 * cam->z_far * cam->z_near) / (cam->z_far - cam->z_near);
     proj.row[3].col[2] = -1.0f;
 
     return fmul_fmat4x4(proj, lookat);

@@ -57,6 +57,6 @@ void   imm_draw_rect_category(Drawing_Buffer *buffer,
                               int32 x0, int32 y0,
                               int32 x1, int32 y1);
 
-void   imm_draw_textinput(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, char *buffer, size_t buffer_range);
+void   imm_draw_textinput(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, char *textbuf, size_t buffer_range);
 #endif // _K_IMM_H
 #endif // STB_TRUETYPE_IMPLEMENTATION

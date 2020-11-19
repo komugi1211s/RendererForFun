@@ -25,9 +25,9 @@ typedef double    real64;
 typedef intptr_t  iptr;
 typedef uintptr_t uptr;
 
-#define BYTES(n) ((size)n)
-#define KILOBYTES(n) (KILOBYTES(n)*1024)
-#define MEGABYTES(n) (MEGABYTES(n)*1024)
+#define BYTES(n) ((size_t)n)
+#define KILOBYTES(n) (BYTES(n)*1024)
+#define MEGABYTES(n) (KILOBYTES(n)*1024)
 #define GIGABYTES(n) (MEGABYTES(n)*1024)
 
 #if  _MSC_VER
