@@ -22,12 +22,11 @@ typedef struct Model {
     fVector3   *vertices;
     fVector3   *texcoords;
     fVector3   *normals;
+    FaceId     *face_indices;
 
     size_t   num_vertices;
     size_t   num_texcoords;
     size_t   num_normals;
-
-    FaceId  *face_indices;
     size_t   num_face_indices;
 
     bool32   load_face(size_t index, Face *output);

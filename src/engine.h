@@ -107,6 +107,7 @@ typedef struct ProfileScope {
  * General Engine Stuff.
  * =========================================
  * */
+
 typedef struct MouseInput {
     real32 x, y;
     bool32 left, right;
@@ -176,6 +177,12 @@ typedef struct Color {
         return result;
     }
 } Color;
+
+typedef struct Property {
+    fVector3 position;
+    fVector3 rotation; // TODO(fuzzy): Quaternions
+    fVector3 scale;
+} Property;
 
 Color rgba(real32 r, real32 g, real32 b, real32 a) {
     Color result;

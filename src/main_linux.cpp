@@ -15,9 +15,8 @@
 
 #include "general.h"
 #include "3rdparty.h"
-#include "engine.cpp"
-
 #include "maths.cpp"
+#include "engine.cpp"
 #include "model.cpp"
 #include "renderer.cpp"
 #include "imm.cpp"
@@ -56,9 +55,9 @@ void update_camera_with_input(Camera *camera, Input *input, real32 dt) {
 
     real32 sensitivity = 100.0 * dt;
     camera->yaw   += (dx * sensitivity);
-    camera->pitch -= (dy * sensitivity);
+    camera->pitch += (dy * sensitivity);
 
-    camera->pitch = FP_MAX(-89.0, FP_MIN(89.0, camera->pitch));
+    camera->pitch = FP_CLAMP(camera->pitch, -89.0, 89.0);
 
     real32 rad_yaw, rad_pitch;
     rad_yaw = FP_DEG2RAD(camera->yaw);
@@ -98,7 +97,7 @@ bool32 load_simple_font(const char *font_name, FontData *font_data, int32 window
         fclose(font);
 
         stbtt_InitFont(&font_data->font_info, ttf_buffer, 0);
-        font_data->char_scale = stbtt_ScaleForPixelHeight(&font_data->font_info, window_height / 40);
+        font_data->char_scale = stbtt_ScaleForPixelHeight(&font_data->font_info, window_height / 45);
         stbtt_GetFontVMetrics(&font_data->font_info, &font_data->ascent, &font_data->descent, &font_data->line_gap);
         font_data->base_line = font_data->ascent * font_data->char_scale;
         return 1;
@@ -181,10 +180,22 @@ char *format(const char * __restrict message, ...) {
     return bucket;
 }
 
-void draw_debug_info(Drawing_Buffer *buffer, Input *input, FontData *font_data, Camera *camera, Model *model, real32 ms_per_frame, real32 fps, uint64 cycle_elapsed) {
+// TODO(fuzzy):
+// このまま行くと引数50個ぐらい持ってしまう…
+void draw_debug_info(Drawing_Buffer *buffer,
+                     Input *input,
+                     FontData *font_data,
+                     Camera *camera,
+                     Model *model,
+                     real32 ms_per_frame, real32 fps, uint64 cycle_elapsed)
+{
     Color box_color = rgba(0.1, 0.1, 0.1, 0.2);
-    draw_filled_rectangle(buffer, 5, 50, 500, 300, box_color);
+    int32 x_window_size = 500;
+    int32 y_window_size = 300;
+    int32 x_window_pos = 5;
+    int32 y_window_pos = 50;
 
+    draw_filled_rectangle(buffer, x_window_pos, y_window_pos, x_window_pos + x_window_size, y_window_pos + y_window_size, box_color);
     int32 x = 10;
     int32 y = 60;
     for (int32 i = 0; i < profile_info_count; ++i) {
@@ -265,10 +276,11 @@ int main(int argc, char **argv) {
                 XFlush(display);
 
 
-                size_t core_memory_size = GIGABYTES(2);
+                size_t core_memory_size = MEGABYTES(128);
                 void *memory = malloc(core_memory_size);
 
                 Arena core_arena((uint8*)memory, core_memory_size);
+
 
                 // =======================================
                 // レンダリングに必要な物全般をセットアップ
@@ -283,7 +295,6 @@ int main(int argc, char **argv) {
                 default_style.bg_color = rgba(0.1, 0.1, 0.1, 0.5);
                 default_style.hot_color = rgba(0.50, 0.0, 0.0, 0.5);
                 default_style.active_color = rgba(0.0, 0.5, 0.0, 0.5);
-
                 imm_set_style(default_style);
 
                 Model model = {0};
@@ -422,7 +433,7 @@ int main(int argc, char **argv) {
                     if (draw_wireframe) {
                         draw_wire_model(&buffer, &model, &camera, c);
                     } else {
-                        draw_filled_model(&buffer, &model, &camera, c);
+                        draw_textured_model(&buffer, &model, &camera, &texture);
                     }
 
                     if (draw_z_buffer) {

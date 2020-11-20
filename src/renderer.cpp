@@ -1,6 +1,14 @@
 ﻿#include "maths.h"
 #include "renderer.h"
 
+/* NOTE(fuzzy):
+ *   レンダラのルール
+ *    - プラットフォームレイヤーは仕様として「y = 0 == 左上」である
+ *    - レンダラはこれに対して「 y = 0 == 左下 」である
+ *    - なので現在viewportプロジェクションで上下をひっくり返すようにしている
+ *
+ * */
+
 void swap_buffer(Drawing_Buffer *buffer) {
     uint32 *visible_buffer = buffer->visible_buffer;
     buffer->visible_buffer = buffer->back_buffer;
@@ -239,7 +247,7 @@ void draw_textured_triangle(Drawing_Buffer *buffer,
                 real32 t_y = (texcoords[0].y * weight3) + (texcoords[1].y * weight1) + (texcoords[2].y * weight2);
 
                 int32 tex_x = t_x * texture->width;
-                int32 tex_y = t_y * texture->height;
+                int32 tex_y = texture->height - (t_y * texture->height);
                 int32 tex_p = (int32)(tex_x + (tex_y * texture->width)) * texture->channels;
 
                 uint32 r, g, b;
@@ -276,7 +284,7 @@ void project_viewport(fVector3 world_space[3],
 
     for (int i = 0; i < 3; ++i) {
         world_space[i].x = ((1.0 + world_space[i].x) * 0.5) * window_width;
-        world_space[i].y = ((1.0 + world_space[i].y) * 0.5) * window_height;
+        world_space[i].y = window_height - (((1.0 + world_space[i].y) * 0.5) * window_height); // Yは上！！！
         world_space[i].z = ((1.0 + world_space[i].z) * 0.5) * arbitary_depth;
     }
 }
@@ -298,12 +306,12 @@ void draw_filled_rectangle(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1,
     }
 }
 
-void draw_filled_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Color color) {
+void draw_filled_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Property *property, Color color) {
     PROFILE_FUNC;
 
     fVector3 AB, AC;
     fVector3 surface_normal;
-    fMat4x4 mvp = create_mvp_matrix(camera);
+    fMat4x4 mvp = create_mvp_matrix(camera, property);
     for (size_t i = 0; i < model->num_face_indices; ++i) {
         // TODO(fuzzy): Face構造体そのもののポインターをロードできるのでは？
         Face face = {0};
@@ -338,20 +346,20 @@ void draw_filled_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Col
 
             project_viewport(face.vertices, buffer->window_width,
                                             buffer->window_height);
-            draw_filled_triangle(buffer, face.vertices[0], face.vertices[1], face.vertices[2],
-                                   color);
+
+            draw_filled_triangle(buffer, face.vertices, color);
         }
 
 do_not_render_and_go_next_triangles_filled:;
     }
 }
 
-void draw_textured_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Texture *texture) {
+void draw_textured_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Property *property, Texture *texture) {
     PROFILE_FUNC;
     fVector3 AB, AC;
     fVector3 surface_normal;
     real32 culling_result;
-    fMat4x4 mvp = create_mvp_matrix(camera);
+    fMat4x4 mvp = create_mvp_matrix(camera, property);
 
     for (size_t i = 0; i < model->num_face_indices; ++i) {
         Face face = {0};
@@ -384,14 +392,15 @@ void draw_textured_model(Drawing_Buffer *buffer, Model *model, Camera *camera, T
             surface_normal = fnormalize_fv3(fcross_fv3(AC, AB));
             culling_result = -fdot_fv3(face.vertices[0], surface_normal);
             if(culling_result < 0) {
-                TRACE("Culling: %f", culling_result);
                 continue;
             }
-
             project_viewport(face.vertices, buffer->window_width,
-                             buffer->window_height);
-            draw_textured_triangle(buffer, face.vertices[0], face.vertices[1], face.vertices[2],
-                                   face.texcoords, 1.0, texture);
+                                            buffer->window_height);
+            if (face.has_normals) {
+                draw_textured_triangle(buffer, face.vertices, face.texcoords, face.normals, texture);
+            } else {
+                draw_textured_triangle(buffer, face.vertices, face.texcoords, NULL, texture);
+            }
 
             // Triangleを構成するVertexのうち、どれか１つのZの位置がレンダリングできない範囲内にあるので
             // ここに飛んでTriangle自体のレンダリングを避ける
@@ -405,9 +414,9 @@ void draw_textured_model(Drawing_Buffer *buffer, Model *model, Camera *camera, T
     }
 }
 
-void draw_wire_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Color color) {
+void draw_wire_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Property *property, Color color) {
     PROFILE_FUNC;
-    fMat4x4 mvp = create_mvp_matrix(camera);
+    fMat4x4 mvp = create_mvp_matrix(camera, property);
     for (size_t i = 0; i < model->num_face_indices; ++i) {
         Face face = {0};
         bool32 face_loaded = model->load_face(i, &face);
@@ -433,8 +442,7 @@ void draw_wire_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Color
             project_viewport(face.vertices, buffer->window_width,
                                             buffer->window_height);
 
-            draw_wire_triangle(buffer, face.vertices[0], face.vertices[1], face.vertices[2],
-                               color);
+            draw_wire_triangle(buffer, face.vertices, color);
         } else {
             TRACE("failed to load model");
         }
@@ -479,18 +487,10 @@ void draw_text(Drawing_Buffer *buffer, FontData *font, int32 start_x, int32 star
         }
         bitmap = &bitmap_array[character];
 
-        x += lsb * font->char_scale;
         int32 position = ((x + x0) + (y + y0) * buffer->window_width);
 
-        int32 kern = 0;
-        if (*(t+1) != '\0') {
-            kern = stbtt_GetCodepointKernAdvance(&font->font_info,
-                                                 character,
-                                                 *(t + 1));
-        }
-
         if (bitmap->width < 0) {
-            x += (advance + kern) * font->char_scale;
+            x += advance * font->char_scale;
             continue;
         }
 
@@ -503,15 +503,25 @@ void draw_text(Drawing_Buffer *buffer, FontData *font, int32 start_x, int32 star
             }
         }
 
-        x += (advance + kern) * font->char_scale;
+        x += advance * font->char_scale;
     }
 }
 
 
-fMat4x4 create_mvp_matrix(Camera *cam) {
+fMat4x4 create_mvp_matrix(Camera *cam, Property *property) {
     /*
-     * ModelViewProjectionマトリックスを作る（現状はModel == Identity なので実質VP）
+     * ModelViewProjectionマトリックスを作る
      * */
+
+    fMat4x4 model = fMat4Identity();
+
+    model.row[0].col[0] = property->scale.x;
+    model.row[1].col[1] = property->scale.y;
+    model.row[2].col[2] = property->scale.z;
+
+    model.row[3].col[0] = property->position.x;
+    model.row[3].col[1] = property->position.y;
+    model.row[3].col[2] = property->position.z;
 
     fVector3 z, x, y;
     z = fnormalize_fv3(cam->target);
@@ -544,5 +554,5 @@ fMat4x4 create_mvp_matrix(Camera *cam) {
     proj.row[2].col[3] = -(2.0 * cam->z_far * cam->z_near) / (cam->z_far - cam->z_near);
     proj.row[3].col[2] = -1.0f;
 
-    return fmul_fmat4x4(proj, lookat);
+    return fmul_fmat4x4(proj, fmul_fmat4x4(lookat, model));
 }

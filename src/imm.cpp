@@ -12,13 +12,7 @@ int32 _imm_get_text_width(char *text) {
         stbtt_GetCodepointHMetrics(&imm_font->font_info, chara,
                                    &advance, &lsb);
 
-        x += ((real32)(advance + lsb)) * char_scale;
-        if (*(t + 1) != '\0') {
-            int32 kern = stbtt_GetCodepointKernAdvance(&imm_font->font_info,
-                                                       chara,
-                                                       *(t + 1));
-            x += (kern * char_scale);
-        }
+        x += advance * char_scale;
     }
     return (int32)ceil(x);
 }

@@ -36,10 +36,10 @@ typedef struct Camera {
     real32 pitch, yaw;
 } Camera;
 
-
 global_variable const uint32 CLEAR_COLOR_BUFFER = 1 << 1;
 global_variable const uint32 CLEAR_Z_BUFFER     = 1 << 2;
 
+// TODO(fuzzy): Replace with glyphs
 typedef struct DEBUGCharacterBitmap {
     uint8 *allocated;
     int32 width, height, x_off, y_off;
@@ -55,20 +55,20 @@ void swap_buffer(Drawing_Buffer *buffer);
 void clear_buffer(Drawing_Buffer *buffer, uint32 clear_mode);
 void draw_line(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, Color color);
 
-void draw_wire_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3 C, Color color);
-void draw_filled_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3 C, Color color);
-void draw_textured_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3 C, fVector3 texcoords[3], real32 light_intensity, Texture *texture);
+void draw_wire_triangle(Drawing_Buffer *buffer, fVector3 triangle[3], Color color);
+void draw_filled_triangle(Drawing_Buffer *buffer, fVector3 triangle[3], Color color);
+void draw_textured_triangle(Drawing_Buffer *buffer, fVector3 triangle[3], fVector3 texcoords[3], fVector3 *(normals[3]), Texture *texture);
 
-void draw_wire_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Color color);
-void draw_filled_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Color color);
-void draw_textured_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Texture *texture);
+void draw_wire_model(Drawing_Buffer *buffer,     Model *model, Camera *camera, Property *property, Color color);
+void draw_filled_model(Drawing_Buffer *buffer,   Model *model, Camera *camera, Property *property, Color color);
+void draw_textured_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Property *property, Texture *texture);
 
 void draw_wire_rectangle(Drawing_Buffer *buffer, real32 x0, real32 y0, real32 x1, real32 y1, Color color);
 void draw_filled_rectangle(Drawing_Buffer *buffer, real32 x0, real32 y0, real32 x1, real32 y1, Color color);
 void DEBUG_render_z_buffer(Drawing_Buffer *buffer);
 
 void draw_gizmo_to_origin(Drawing_Buffer *buffer, Camera *camera);
-fMat4x4 create_mvp_matrix(Camera *cam);
+fMat4x4 create_mvp_matrix(Camera *cam, Property *property);
 
 void draw_text(Drawing_Buffer *buffer, FontData *font_data, int32 x, int32 y, char *Text);
 
