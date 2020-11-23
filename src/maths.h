@@ -1,5 +1,5 @@
-#ifndef _K_FP_H
-#define _K_FP_H
+#ifndef _K_MATH_H
+#define _K_MATH_H
 
 #include <emmintrin.h> // SSE2 SIMD.
 
@@ -54,10 +54,11 @@ typedef struct BoundingBoxf3 {
 } BoundingBoxf3;
 
 
-typedef struct fMat4x4 {
-    struct {
-        real32 col[4];
-    } row[4];
+typedef union fMat4x4 {
+    struct { fVector4 x, y, z, w; };
+    struct { real32 rc[4][4]; };
+    struct { real32 col[4]; } row[4];
+    real32 e[16];
 } fMat4x4;
 
 
@@ -139,6 +140,10 @@ BB_fV3(fVector3 one, fVector3 two, fVector3 three) {
     return box;
 }
 
+internal fMat4x4 fMat4Lookat(fVector3 position, fVector3 target, fVector3 up);
+internal fMat4x4 fMat4Perspective(real32 aspect_ratio, real32 fovy, real32 z_near, real32 z_far);
+internal fMat4x4 fMat4WorldToScreen(real32 width, real32 height, real32 depth);
+internal fMat4x4 fMat4ScreenToWorld(real32 width, real32 height, real32 depth);
 
 internal inline fVector3 fneg_fv3(fVector3 A);
 internal inline fVector3 fadd_fv3(fVector3 A, fVector3 B);
@@ -157,4 +162,7 @@ internal inline iVector3 isub_iv3(iVector3 A, iVector3 B);
 
 internal inline fMat4x4  fmul_fmat4x4(fMat4x4 A, fMat4x4 B);
 internal inline fVector4 fmul_fmat4x4_fv4(fMat4x4 A, fVector4 B);
-#endif
+
+internal inline real32   fdeterminant_triangle_fv3(fVector3 &a, fVector3 &b, fVector3 &c);
+
+#endif // _K_MATH_H

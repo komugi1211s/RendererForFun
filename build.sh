@@ -3,4 +3,4 @@ if [ ! -d "dist" ]; then
 fi
 
 g++ -g -O1 -o dist/compiled src/main_linux.cpp -lX11 -lm
-cp resources/inconsolata.ttf     dist/inconsolata.ttf
+cp resources/inconsolata.ttf dist/inconsolata.ttf

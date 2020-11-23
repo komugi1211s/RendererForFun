@@ -40,23 +40,23 @@ imm_end() {
 
 int32  _imm_get_text_width(char *text);
 
-void   imm_draw_top_bar(Drawing_Buffer *buffer, int32 width, int32 height);
-bool32 imm_draw_text_button(Drawing_Buffer *buffer,
+void   imm_draw_top_bar(ScreenBuffer *buffer, int32 width, int32 height);
+bool32 imm_draw_text_button(ScreenBuffer *buffer,
                             int32 x, int32 y,
                             int32 min_width, int32 height,
                             char *text, int32 *actual_width);
 
-void   imm_draw_text_slider(Drawing_Buffer *buffer,
+void   imm_draw_text_slider(ScreenBuffer *buffer,
                             int32 x, int32 y,
                             int32 width, int32 height,
                             char *text,
                             real32 min_value, real32 max_value,
                             real32 *output_value);
 
-void   imm_draw_rect_category(Drawing_Buffer *buffer,
+void   imm_draw_rect_category(ScreenBuffer *buffer,
                               int32 x0, int32 y0,
                               int32 x1, int32 y1);
 
-void   imm_draw_textinput(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, char *textbuf, size_t buffer_range);
+void   imm_draw_textinput(ScreenBuffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, char *textbuf, size_t buffer_range);
 #endif // _K_IMM_H
 #endif // STB_TRUETYPE_IMPLEMENTATION

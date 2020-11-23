@@ -69,7 +69,7 @@ void update_camera_with_input(Camera *camera, Input *input, real32 dt) {
     camera->target = fnormalize_fv3(camera->target);
 }
 
-void update_xwindow_with_drawbuffer(Display *display, Window window, GC context, Drawing_Buffer *buffer) {
+void update_xwindow_with_drawbuffer(Display *display, Window window, GC context, ScreenBuffer *buffer) {
     uint32 *drawing_buffer = buffer->back_buffer;
 
     XImage image;
@@ -182,7 +182,7 @@ char *format(const char * __restrict message, ...) {
 
 // TODO(fuzzy):
 // このまま行くと引数50個ぐらい持ってしまう…
-void draw_debug_info(Drawing_Buffer *buffer,
+void draw_debug_info(ScreenBuffer *buffer,
                      Input *input,
                      FontData *font_data,
                      Camera *camera,
@@ -223,6 +223,7 @@ void default_camera(Camera *cam) {
     cam->z_far        = 1000.0;
     cam->z_near       = 0.01;
     cam->yaw          = 90.0f;
+    cam->pitch        = 0.0f;
 }
 
 int main(int argc, char **argv) {
@@ -308,7 +309,7 @@ int main(int argc, char **argv) {
                     return 0;
                 }
 
-                Drawing_Buffer buffer = {0};
+                ScreenBuffer buffer = {0};
                 buffer.window_width   = window_width;
                 buffer.window_height  = window_height;
                 buffer.depth          = screen_bit_depth;
@@ -479,19 +480,6 @@ int main(int argc, char **argv) {
                             imm_draw_text_slider(&buffer, current_x, 0, fixed_width, topbar_y_size, name, 0.0, 120.0, &camera.fov);
                             current_x += fixed_width;
                         }
-
-                        // Drawing Model Info / Menu.
-                        int32 y0 = window_height - 200;
-                        int32 y1 = window_height - 10;
-                        imm_draw_rect_category(&buffer, 10, y0, 600, y1);
-
-                        {
-                            char *name = (char *)"Load Model";
-                            if(imm_draw_text_button(&buffer, 20, y1 - 40, 100, 30, name, NULL)) {
-                                TRACE("Load Model!");
-                            }
-                        }
-
                         imm_end();
                     }
                     update_xwindow_with_drawbuffer(display, my_window, context, &buffer);

@@ -14,15 +14,15 @@
 #include "general.h"
 #include "3rdparty.h"
 
-#include "engine.cpp"
 #include "maths.cpp"
+#include "engine.cpp"
 #include "model.cpp"
 #include "renderer.cpp"
 #include "imm.cpp"
 
 global_variable bool32         running = 1;
 global_variable BITMAPINFO     bitmap_info;
-global_variable Drawing_Buffer drawing_buffer;
+global_variable ScreenBuffer drawing_buffer;
 global_variable Input          input;
 
 void render_buffer(HDC context, RECT *client_rect) {
@@ -30,27 +30,16 @@ void render_buffer(HDC context, RECT *client_rect) {
     int32 client_width  = client_rect->right  - client_rect->left;
     int32 client_height = client_rect->bottom - client_rect->top;
 
-    if (!(StretchDIBits(context,
-                        0, 0,
-                        drawing_buffer.window_width, drawing_buffer.window_height,
-                        0, 0,
-                        drawing_buffer.window_width, drawing_buffer.window_height,
-                        (void *)current_buffer, &bitmap_info, DIB_RGB_COLORS, SRCCOPY)))
-    {
-        int32 b = GetLastError();
-        BREAK
-    }
+    StretchDIBits(context,
+                  0, 0,
+                  drawing_buffer.window_width, drawing_buffer.window_height,
+                  0, 0,
+                  drawing_buffer.window_width, drawing_buffer.window_height,
+                  (void *)current_buffer, &bitmap_info, DIB_RGB_COLORS, SRCCOPY);
 }
 
 LRESULT CALLBACK my_window_proc(HWND handle, uint32 message, WPARAM wparam, LPARAM lparam) {
     LRESULT result = 0;
-    /*
-    if (!igGetCurrentContext()) {
-        return DefWindowProc(handle, message, wparam, lparam);
-    }
-
-    ImGuiIO *io = igGetIO();
-    */
 
     switch(message) {
         case WM_LBUTTONDOWN:
@@ -254,7 +243,7 @@ void update_camera_with_input(Camera *camera, Input *input, real32 dt) {
 
         real32 sensitivity = 100.0 * dt;
         camera->yaw   += (dx * sensitivity);
-        camera->pitch -= (dy * sensitivity);
+        camera->pitch += (dy * sensitivity);
 
         camera->pitch = FP_CLAMP(camera->pitch, -89.0, 89.0);
 
@@ -269,7 +258,7 @@ void update_camera_with_input(Camera *camera, Input *input, real32 dt) {
     }
 }
 
-void draw_debug_menu(Drawing_Buffer *buffer, Input *input, FontData *font_data, Camera *camera, Model *model, real32 ms_per_frame, real32 fps, uint64 cycle_elapsed) {
+void draw_debug_menu(ScreenBuffer *buffer, Input *input, FontData *font_data, Camera *camera, Model *model, real32 ms_per_frame, real32 fps, uint64 cycle_elapsed) {
     Color box_color = rgba(0.1, 0.1, 0.1, 0.2);
     draw_filled_rectangle(buffer, 10, 50, 600, 300, box_color);
 
@@ -296,12 +285,12 @@ void draw_debug_menu(Drawing_Buffer *buffer, Input *input, FontData *font_data, 
 
 void default_camera(Camera *cam) {
     cam->position     = fVec3(0.0, 0.0, 2.0);
-    cam->target       = fVec3(0.0, 0.0, 0.0);
+    cam->target       = fVec3(0.0, 0.0, 1.0);
     cam->up           = fVec3(0.0, 1.0, 0.0);
     cam->fov          = 90.0f;
     cam->aspect_ratio = 16.0 / 9.0;
-    cam->z_far        = 100.0;
-    cam->z_near       = 0.1;
+    cam->z_far        = 1000.0;
+    cam->z_near       = 0.01;
     cam->yaw          = 90.0f;
     cam->pitch        = 0.0f;
 }
@@ -342,7 +331,6 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
 
             Arena core_arena((uint8*)memory, core_memory_size);
             
-
             drawing_buffer.window_width = window_width;
             drawing_buffer.window_height = window_height;
             drawing_buffer.depth = 32;
@@ -354,18 +342,20 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             }
 
             Model model = {0};
-            if (!load_simple_model("teapot.obj", &model)) {
+            if (!load_simple_model("african_head.obj", &model)) {
                 return 0;
             }
 
-            /* 
             Texture texture = {0};
             if (!load_simple_texture("african_head.tga", &texture)) {
                 return 0;
             }
-            */
 
 
+            Property property;
+            property.position = fVec3(0.0, 0.0, 0.0);
+            property.rotation = fVec3(0.0, 0.0, 0.0);
+            property.scale    = fVec3(1.0, 1.0, 1.0);
 
             ImmStyle default_style;
             default_style.bg_color = rgba(0.25, 0.25, 0.25, 0.5);
@@ -427,10 +417,9 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
                 update_camera_with_input(&camera, &input, delta_time);
 
                 if (wireframe_on) {
-                    draw_wire_model(&drawing_buffer, &model, &camera, color);
+                    draw_wire_model(&drawing_buffer, &model, &camera, &property, color);
                 } else {
-                    draw_filled_model(&drawing_buffer, &model, &camera, color);
-                    // draw_filled_model(&drawing_buffer, &model, &camera, &texture);
+                    draw_textured_model(&drawing_buffer, &model, &camera, &property, &texture);
                 }
 
                 if (draw_z_buffer) {
@@ -475,17 +464,6 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
                         imm_draw_text_slider(&drawing_buffer, current_x, 0, fixed_width, topbar_y_size, name, 0.0, 120.0, &camera.fov);
                         current_x += fixed_width;
                     }
-                    // Drawing Model Info / Menu.
-                    int32 y0 = window_height - 300;
-                    int32 y1 = window_height - 110;
-                    imm_draw_rect_category(&drawing_buffer, 10, y0, 600, y1);
-
-                    {
-                        char *name = (char *)"Load Model";
-                        if(imm_draw_text_button(&drawing_buffer, 20, y1 - 40, 100, 30, name, NULL)) {
-                            TRACE("Load Model!");
-                        }
-                    }
                     imm_end();
                 }
 
@@ -504,7 +482,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
                 start_cycle = end_cycle;
             }
 
-            // stbi_image_free(texture.data);
+            stbi_image_free(texture.data);
             VirtualFree(model.vertices,       0, MEM_RELEASE);
             VirtualFree(model.texcoords,      0, MEM_RELEASE);
             VirtualFree(model.normals,        0, MEM_RELEASE);

@@ -9,13 +9,13 @@
  *
  * */
 
-void swap_buffer(Drawing_Buffer *buffer) {
+void swap_buffer(ScreenBuffer *buffer) {
     uint32 *visible_buffer = buffer->visible_buffer;
     buffer->visible_buffer = buffer->back_buffer;
     buffer->back_buffer = visible_buffer;
 }
 
-void clear_buffer(Drawing_Buffer *buffer, uint32 clear_mode) {
+void clear_buffer(ScreenBuffer *buffer, uint32 clear_mode) {
     uint32 *buf = buffer->back_buffer;
     uint32 total_size = buffer->window_width * buffer->window_height;
 
@@ -34,7 +34,7 @@ void clear_buffer(Drawing_Buffer *buffer, uint32 clear_mode) {
     }
 }
 
-void draw_line(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, Color color) {
+void draw_line(ScreenBuffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, Color color) {
     x0 = FP_MAX(0, FP_MIN(x0, buffer->window_width));
     x1 = FP_MAX(0, FP_MIN(x1, buffer->window_width));
     y0 = FP_MAX(0, FP_MIN(y0, buffer->window_height - 1));
@@ -85,12 +85,12 @@ void draw_line(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, C
     }
 }
 
-void DEBUG_render_z_buffer(Drawing_Buffer *buffer) {
+void DEBUG_render_z_buffer(ScreenBuffer *buffer) {
     uint32 *buf = buffer->back_buffer;
     for (int32 y = 0; y < buffer->window_height; ++y) {
         for(int32 x = 0; x < buffer->window_width; ++x) {
             int32 z_buffer_position = x + y * buffer->window_width;
-            uint8 z_val = static_cast<uint8>(ceil(FP_MIN(FP_MAX(0.0, buffer->z_buffer[z_buffer_position]), 254.0)));
+            uint8 z_val = static_cast<uint8>(ceil(FP_CLAMP(buffer->z_buffer[z_buffer_position], 0.0, 254.0)));
 
             uint32 result = (z_val << 16 | z_val << 8 | z_val);
             buf[z_buffer_position] = result;
@@ -99,7 +99,7 @@ void DEBUG_render_z_buffer(Drawing_Buffer *buffer) {
 }
 
 internal inline void
-draw_bounding_box(Drawing_Buffer *buffer, BoundingBoxi2 box, Color color) {
+draw_bounding_box(ScreenBuffer *buffer, BoundingBoxi2 box, Color color) {
 
     // from top left, goes right / bottom side
     draw_line(buffer, box.min_v.x, box.min_v.y, box.min_v.x, box.max_v.y, color);
@@ -118,36 +118,30 @@ draw_bounding_box(Drawing_Buffer *buffer, BoundingBoxi2 box, Color color) {
 // 参考: https://shikihuiku.wordpress.com/2017/05/23/barycentric-coordinates%E3%81%AE%E8%A8%88%E7%AE%97%E3%81%A8perspective-correction-partial-derivative%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6/
 // ryg先生の説明 https://fgiesen.wordpress.com/2013/02/06/the-barycentric-conspirac/
 
-void draw_filled_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3 C, Color color) {
-    // if (USE_LINE_SWEEPING) _line_sweeping(buffer, y_sm, y_md, y_bg, color);
+void draw_filled_triangle(ScreenBuffer *buffer, fVector3 vertices[3], Color color) {
     uint32 *buf = buffer->back_buffer;
-    BoundingBoxf3 bd_box = BB_fV3(A, B, C);
+    BoundingBoxf3 bd_box = BB_fV3(vertices[0], vertices[1], vertices[2]);
     uint32 c = color.to_uint32_argb();
-    fVector3 AB, AC, PA;
+    
+    real32 det_t = fdeterminant_triangle_fv3(vertices[0], vertices[1], vertices[2]);
 
-    AB.x = B.x - A.x;
-    AB.y = B.y - A.y;
-    AC.x = C.x - A.x;
-    AC.y = C.y - A.y;
-
-    real32 det_T = AB.x * AC.y - AC.x * AB.y;
-    bool32 triangle_is_degenerate = fabsf(det_T) < 1;
+    bool32 triangle_is_degenerate = fabsf(det_t) < 1;
 
     if (!triangle_is_degenerate) {
         int32 y_min = (int32)FP_MAX(floor(bd_box.min_v.y), 0);
         int32 y_max = (int32)FP_MIN(ceil(bd_box.max_v.y), buffer->window_height-1);
         int32 x_min = (int32)FP_MAX(floor(bd_box.min_v.x), 0);
         int32 x_max = (int32)FP_MIN(ceil(bd_box.max_v.x), buffer->window_width-1);
+        fVector3 P;
+        real32 weight1, weight2, weight3;
 
         for(int32 y = y_min; y < y_max; ++y) {
-            PA.y = y - A.y;
+            P.y = y;
             for(int32 x = x_min; x < x_max; ++x) {
-                PA.x = x - A.x;
-                real32 weight1, weight2, weight3;
-
-                weight1 = (PA.x * AC.y - PA.y * AC.x) / det_T;
-                weight2 = (AB.x * PA.y - AB.y * PA.x) / det_T;
-                weight3 = 1.f - weight1 - weight2;
+                P.x = x;
+                weight1 = fdeterminant_triangle_fv3(vertices[1], vertices[2], P) / det_t;
+                weight2 = fdeterminant_triangle_fv3(vertices[2], vertices[0], P) / det_t;
+                weight3 = fdeterminant_triangle_fv3(vertices[0], vertices[1], P) / det_t;
 
                 // (1 - x - y)A + xB + yC = P' なので x+y+(1-x-y) = 1 とならなければならず
                 // どれか1つの点が負数の場合三角形の外に点があることになる
@@ -155,7 +149,7 @@ void draw_filled_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVecto
 
                 // (1 - x - y)A + xB + yC として定義してあるので
                 // 掛け算もそれに合わせて揃えないといけない
-                real32 z_value = (A.z * weight3) + (B.z * weight1) + (C.z * weight2);
+                real32 z_value = (vertices[0].z * weight1) + (vertices[1].z * weight2) + (vertices[2].z * weight3);
                 int32 position = (y * buffer->window_width) + x;
 
                 if (position > (buffer->window_width * buffer->window_height)) continue;
@@ -171,89 +165,67 @@ void draw_filled_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVecto
 }
 
 // draw_filled_triangleとほとんど同じ
-void draw_textured_triangle(Drawing_Buffer *buffer,
-                            fVector3 A, fVector3 B, fVector3 C,
+void draw_textured_triangle(ScreenBuffer *buffer,
+                            fVector3 vertices[3],
                             fVector3 texcoords[3],
-                            real32 light_intensity,
+                            fVector3 light_intensity, // TODO(fuzzy): Technical Debt.
                             Texture *texture)
 {
     PROFILE_FUNC
     uint32 *buf = buffer->back_buffer;
-    BoundingBoxf3 bd_box = BB_fV3(A, B, C);
-    fVector3 AB, AC, PA;
-
-    // 最適化用に iVec2 は使わない（使うと鬼のように遅くなる）
-    AB.x = B.x - A.x;
-    AB.y = B.y - A.y;
-    AC.x = C.x - A.x;
-    AC.y = C.y - A.y;
-
+    BoundingBoxf3 bd_box = BB_fV3(vertices[0], vertices[1], vertices[2]);
     // NOTE(fuzzy):
     // 数学を忘れないためにイチイチメモをする:
     //
     // det_T は三角形ABCの辺AB、ACから構成した行列式（三角形の面積もどき）で
     // 本来の三角形の二倍の面積を持っている（なので実際はdet_T/2が実際の三角形の面積）
 
-    real32 det_T = AB.x * AC.y - AC.x * AB.y;
-
     // NOTE(fuzzy):
-    // det_Tが 0 の場合（本来ならEPSとかと比べるべき）
+    // det_Tが 1 より小さい場合（本来ならEPSとかと比べるべき）
     // その三角形は線形的に独立していない(Linearly dependant)とされる
-    // これはつまり三角形がxyz軸のうちどれかに対して面のように平べったく広がっている/もしくは全部の点が全て同じ位置にある可能性がある
+    // これはつまり三角形がxy軸のうちどちらかに対して面のように平べったく広がっている/もしくは全部の点が全て同じ位置にある可能性がある
     // これが満たされる場合はその三角形を書くのも無駄なので（ほぼ線みたいになってるので書けないと思う）
     // 完全に無視する
-    bool32 triangle_is_degenerate = fabsf(det_T) < 1;
+    real32 det_t = fdeterminant_triangle_fv3(vertices[0], vertices[1], vertices[2]);
 
+    bool32 triangle_is_degenerate = fabsf(det_t) < 1;
     if (!triangle_is_degenerate) {
         int32 y_min = (int32)FP_MAX(floor(bd_box.min_v.y), 0);
         int32 y_max = (int32)FP_MIN(ceil(bd_box.max_v.y), buffer->window_height-1);
         int32 x_min = (int32)FP_MAX(floor(bd_box.min_v.x), 0);
         int32 x_max = (int32)FP_MIN(ceil(bd_box.max_v.x), buffer->window_width-1);
+        fVector3 P;
 
+        real32 weight1, weight2, weight3;
         for(int32 y = y_min; y < y_max; ++y) {
-            PA.y = y - A.y;
+            P.y = y;
             for(int32 x = x_min; x < x_max; ++x) {
+                P.x = x;
                 int32 position = (y * buffer->window_width) + x;
-                PA.x = x - A.x;
-                real32 weight1, weight2, weight3;
 
-                // 適当な点Pが線AB、ACのどちら側に存在するかを確認する
-                // この時、線ABを反時計回りとして定義しているので、線ABの右側に点があるかどうかを確かめればよいが
-                // となると今度は線ACが時計回りになってしまうので、ACの左側に点があるかどうかを確かめる必要がある
-                // そのためACの計算は位置をひっくり返している
-                //
-                // det_Tで割ることで0~1の範囲に正規化し
-                // 他の線形補間の計算時に使えるようにする
+                weight1 = fdeterminant_triangle_fv3(vertices[1], vertices[2], P) / det_t;
+                weight2 = fdeterminant_triangle_fv3(vertices[2], vertices[0], P) / det_t;
+                weight3 = fdeterminant_triangle_fv3(vertices[0], vertices[1], P) / det_t;
 
-                // ryg先生の説明を参照
-                // (x - A.x)(C.y - A.y) - (y - A.y)(C.x - A.x)
-                // = (x*C.y - x*A.y - A.x*C.y + A.x*A.y) - (y*C.x - y*A.x - A.y*C.x + A.y*A.x)
-                // = (x*C.y - x*A.y - A.x*C.y + A.x*A.y) + (y*C.x - y*A.x - A.y*C.x + A.y*A.x)
-                // = ((C.y - A.y) * x) + ((C.x - A.x) * y) + (A.x * C.y - A.y * C.x)
+                if (weight1 < 0|| weight2 < 0 || weight3 < 0) continue;
 
-                weight1 = (PA.x * AC.y - PA.y * AC.x) / det_T;
-                weight2 = (AB.x * PA.y - AB.y * PA.x) / det_T;
-                weight3 = 1.f - weight1 - weight2;
+                real32 z_value = (vertices[0].z  * weight1) + (vertices[1].z  * weight2) + (vertices[2].z  * weight3);
+                // TODO(fuzzy): ここはシェーダーの仕事
+                real32 t_x     = (texcoords[0].x * weight1) + (texcoords[1].x * weight2) + (texcoords[2].x * weight3);
+                real32 t_y     = (texcoords[0].y * weight1) + (texcoords[1].y * weight2) + (texcoords[2].y * weight3);
 
-                // (1 - x - y)A + xB + yC = P' と定義した場合 x+y+(1-x-y) = 1 とならなければならず
-                // どれか1つの点が負数の場合三角形の外に点があることになる
-                if (weight1 < 0 || weight2 < 0 || weight3 < 0) continue;
-
-                // (1 - x - y)A + xB + yC として定義してあるので
-                // 掛け算もそれに合わせて揃えないといけない
-                real32 z_value = (A.z * weight3) + (B.z * weight1) + (C.z * weight2);
-
-                real32 t_x = (texcoords[0].x * weight3) + (texcoords[1].x * weight1) + (texcoords[2].x * weight2);
-                real32 t_y = (texcoords[0].y * weight3) + (texcoords[1].y * weight1) + (texcoords[2].y * weight2);
+                real32 light = (light_intensity.x * weight1)
+                               + (light_intensity.y * weight2)
+                               + (light_intensity.z * weight3);
 
                 int32 tex_x = t_x * texture->width;
                 int32 tex_y = texture->height - (t_y * texture->height);
                 int32 tex_p = (int32)(tex_x + (tex_y * texture->width)) * texture->channels;
 
                 uint32 r, g, b;
-                r = texture->data[tex_p]     * light_intensity;
-                g = texture->data[tex_p + 1] * light_intensity;
-                b = texture->data[tex_p + 2] * light_intensity;
+                r = texture->data[tex_p]     * light;
+                g = texture->data[tex_p + 1] * light;
+                b = texture->data[tex_p + 2] * light;
 
                 if (buffer->z_buffer[position] > z_value) {
                     buffer->z_buffer[position] = z_value;
@@ -264,15 +236,15 @@ void draw_textured_triangle(Drawing_Buffer *buffer,
     }
 }
 
-void draw_wire_triangle(Drawing_Buffer *buffer, fVector3 A, fVector3 B, fVector3 C, Color color) {
+void draw_wire_triangle(ScreenBuffer *buffer, fVector3 vertices[3], Color color) {
     PROFILE_FUNC
-    real32 det_T = (B.x - A.x) * (C.y - A.y) - (C.x - A.x) * (B.y - A.y);
+    real32 det_T = fdeterminant_triangle_fv3(vertices[0], vertices[1], vertices[2]);
     bool32 triangle_is_degenerate = fabsf(det_T) < 1;
 
     if (!triangle_is_degenerate) {
-        draw_line(buffer, floor(A.x), floor(A.y), ceil(B.x), ceil(B.y), color);
-        draw_line(buffer, floor(A.x), floor(A.y), ceil(C.x), ceil(C.y), color);
-        draw_line(buffer, floor(B.x), floor(B.y), ceil(C.x), ceil(C.y), color);
+        draw_line(buffer, floor(vertices[0].x), floor(vertices[0].y), ceil(vertices[1].x), ceil(vertices[1].y), color);
+        draw_line(buffer, floor(vertices[0].x), floor(vertices[0].y), ceil(vertices[2].x), ceil(vertices[2].y), color);
+        draw_line(buffer, floor(vertices[1].x), floor(vertices[1].y), ceil(vertices[2].x), ceil(vertices[2].y), color);
     }
 }
 
@@ -284,12 +256,12 @@ void project_viewport(fVector3 world_space[3],
 
     for (int i = 0; i < 3; ++i) {
         world_space[i].x = ((1.0 + world_space[i].x) * 0.5) * window_width;
-        world_space[i].y = window_height - (((1.0 + world_space[i].y) * 0.5) * window_height); // Yは上！！！
+        world_space[i].y = window_height - (((1.0 + world_space[i].y) * 0.5) * window_height); // NOTE(fuzzy): Yは上！！！
         world_space[i].z = ((1.0 + world_space[i].z) * 0.5) * arbitary_depth;
     }
 }
 
-void draw_filled_rectangle(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, Color color) {
+void draw_filled_rectangle(ScreenBuffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, Color color) {
     uint32 *buf = buffer->back_buffer;
 
     if (x0 < 0 || y0 < 0) return;
@@ -306,12 +278,15 @@ void draw_filled_rectangle(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1,
     }
 }
 
-void draw_filled_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Property *property, Color color) {
+void draw_filled_model(ScreenBuffer *buffer, Model *model, Camera *camera, Property *property, Color color) {
     PROFILE_FUNC;
-
     fVector3 AB, AC;
     fVector3 surface_normal;
-    fMat4x4 mvp = create_mvp_matrix(camera, property);
+
+    fMat4x4 view = fMat4Lookat(camera->position, camera->target, camera->up);
+    fMat4x4 projection = fMat4Perspective(camera->aspect_ratio, camera->fov, camera->z_near, camera->z_far);
+
+    fMat4x4 mvp = fmul_fmat4x4(projection, view);
     for (size_t i = 0; i < model->num_face_indices; ++i) {
         // TODO(fuzzy): Face構造体そのもののポインターをロードできるのでは？
         Face face = {0};
@@ -354,19 +329,23 @@ do_not_render_and_go_next_triangles_filled:;
     }
 }
 
-void draw_textured_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Property *property, Texture *texture) {
+void draw_textured_model(ScreenBuffer *buffer, Model *model, Camera *camera, Property *property, Texture *texture) {
     PROFILE_FUNC;
     fVector3 AB, AC;
     fVector3 surface_normal;
     real32 culling_result;
-    fMat4x4 mvp = create_mvp_matrix(camera, property);
+    fMat4x4 view = fMat4Lookat(camera->position, camera->target, camera->up);
+    fMat4x4 projection = fMat4Perspective(camera->aspect_ratio, camera->fov, camera->z_near, camera->z_far);
 
+    fMat4x4 mvp = fmul_fmat4x4(projection, view);
     for (size_t i = 0; i < model->num_face_indices; ++i) {
         Face face = {0};
+        fVector3 light = { 1.0, 1.0, 1.0 };
         bool32 face_loaded = model->load_face(i, &face);
         if (face_loaded) {
             ASSERT(face.has_texcoords);
             for (int v = 0; v < 3; ++v) {
+                // TODO(fuzzy): シェーダーの仕事
                 fVector4 fv4vert;
                 fv4vert.xyz = face.vertices[v];
                 fv4vert.w = 1.0;
@@ -394,13 +373,17 @@ void draw_textured_model(Drawing_Buffer *buffer, Model *model, Camera *camera, P
             if(culling_result < 0) {
                 continue;
             }
+
+            if (face.has_normals) {
+                light.x = FP_CLAMP(fdot_fv3(face.vertices[0], face.normals[0]), 0.0, 1.0);
+                light.y = FP_CLAMP(fdot_fv3(face.vertices[1], face.normals[1]), 0.0, 1.0);
+                light.z = FP_CLAMP(fdot_fv3(face.vertices[2], face.normals[2]), 0.0, 1.0);
+            }
+
             project_viewport(face.vertices, buffer->window_width,
                                             buffer->window_height);
-            if (face.has_normals) {
-                draw_textured_triangle(buffer, face.vertices, face.texcoords, face.normals, texture);
-            } else {
-                draw_textured_triangle(buffer, face.vertices, face.texcoords, NULL, texture);
-            }
+
+            draw_textured_triangle(buffer, face.vertices, face.texcoords, light, texture);
 
             // Triangleを構成するVertexのうち、どれか１つのZの位置がレンダリングできない範囲内にあるので
             // ここに飛んでTriangle自体のレンダリングを避ける
@@ -414,9 +397,12 @@ void draw_textured_model(Drawing_Buffer *buffer, Model *model, Camera *camera, P
     }
 }
 
-void draw_wire_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Property *property, Color color) {
+void draw_wire_model(ScreenBuffer *buffer, Model *model, Camera *camera, Property *property, Color color) {
     PROFILE_FUNC;
-    fMat4x4 mvp = create_mvp_matrix(camera, property);
+    fMat4x4 view = fMat4Lookat(camera->position, camera->target, camera->up);
+    fMat4x4 projection = fMat4Perspective(camera->aspect_ratio, camera->fov, camera->z_near, camera->z_far);
+
+    fMat4x4 mvp = fmul_fmat4x4(projection, view);
     for (size_t i = 0; i < model->num_face_indices; ++i) {
         Face face = {0};
         bool32 face_loaded = model->load_face(i, &face);
@@ -451,7 +437,7 @@ void draw_wire_model(Drawing_Buffer *buffer, Model *model, Camera *camera, Prope
     }
 }
 
-void draw_text(Drawing_Buffer *buffer, FontData *font, int32 start_x, int32 start_y, char *text) {
+void draw_text(ScreenBuffer *buffer, FontData *font, int32 start_x, int32 start_y, char *text) {
     PROFILE_FUNC;
 
     int32 x = start_x;
@@ -505,54 +491,4 @@ void draw_text(Drawing_Buffer *buffer, FontData *font, int32 start_x, int32 star
 
         x += advance * font->char_scale;
     }
-}
-
-
-fMat4x4 create_mvp_matrix(Camera *cam, Property *property) {
-    /*
-     * ModelViewProjectionマトリックスを作る
-     * */
-
-    fMat4x4 model = fMat4Identity();
-
-    model.row[0].col[0] = property->scale.x;
-    model.row[1].col[1] = property->scale.y;
-    model.row[2].col[2] = property->scale.z;
-
-    model.row[3].col[0] = property->position.x;
-    model.row[3].col[1] = property->position.y;
-    model.row[3].col[2] = property->position.z;
-
-    fVector3 z, x, y;
-    z = fnormalize_fv3(cam->target);
-    x = fnormalize_fv3(fcross_fv3(cam->up, z));
-    y = fnormalize_fv3(fcross_fv3(z, x));
-
-    fMat4x4 lookat = fMat4Identity();
-
-    lookat.row[0].col[0] = x.x;
-    lookat.row[0].col[1] = x.y;
-    lookat.row[0].col[2] = x.z;
-    lookat.row[0].col[3] = -fdot_fv3(x, cam->position);
-
-    lookat.row[1].col[0] = y.x;
-    lookat.row[1].col[1] = y.y;
-    lookat.row[1].col[2] = y.z;
-    lookat.row[1].col[3] = -fdot_fv3(y, cam->position);
-
-    lookat.row[2].col[0] = z.x;
-    lookat.row[2].col[1] = z.y;
-    lookat.row[2].col[2] = z.z;
-    lookat.row[2].col[3] = -fdot_fv3(z, cam->position);
-
-    real32 tan_fov = tan(FP_DEG2RAD(cam->fov) / 2.0);
-    fMat4x4 proj = {0};
-
-    proj.row[0].col[0] = 1.0f / (cam->aspect_ratio * tan_fov);
-    proj.row[1].col[1] = 1.0f / tan_fov;
-    proj.row[2].col[2] = -(cam->z_near + cam->z_far)      / (cam->z_far - cam->z_near);
-    proj.row[2].col[3] = -(2.0 * cam->z_far * cam->z_near) / (cam->z_far - cam->z_near);
-    proj.row[3].col[2] = -1.0f;
-
-    return fmul_fmat4x4(proj, fmul_fmat4x4(lookat, model));
 }

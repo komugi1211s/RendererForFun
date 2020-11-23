@@ -1,6 +1,8 @@
 #ifndef _K_ENGINE_H
 #define _K_ENGINE_H
 
+#include "maths.h"
+
 /*
  * =========================================
  * Memory stuff.

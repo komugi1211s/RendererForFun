@@ -18,12 +18,12 @@ int32 _imm_get_text_width(char *text) {
 }
 
 
-void imm_draw_top_bar(Drawing_Buffer *buffer, int32 width, int32 height) {
+void imm_draw_top_bar(ScreenBuffer *buffer, int32 width, int32 height) {
     if (!_imm_can_draw()) return;
     draw_filled_rectangle(buffer, 0, 0, width, height, imm_style.bg_color);
 }
 
-bool32 imm_draw_text_button(Drawing_Buffer *buffer,
+bool32 imm_draw_text_button(ScreenBuffer *buffer,
                             int32 x, int32 y,
                             int32 min_width, int32 height,
                             char *text, int32 *actual_width)
@@ -66,7 +66,7 @@ bool32 imm_draw_text_button(Drawing_Buffer *buffer,
     return pressed;
 }
 
-void   imm_draw_text_slider(Drawing_Buffer *buffer,
+void   imm_draw_text_slider(ScreenBuffer *buffer,
                             int32 x, int32 y,
                             int32 width, int32 height,
                             char *text,
@@ -108,7 +108,7 @@ void   imm_draw_text_slider(Drawing_Buffer *buffer,
     return;
 }
 
-void imm_draw_rect_category(Drawing_Buffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1) { // Basically for separator / category.
+void imm_draw_rect_category(ScreenBuffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1) { // Basically for separator / category.
     if (!_imm_can_draw()) return;
     draw_filled_rectangle(buffer, x0, y0, x1, y1, imm_style.bg_color);
 }
