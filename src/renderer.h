@@ -66,11 +66,11 @@ global_variable DEBUGCharacterBitmap bitmap_array[BITMAP_ARRAY_SIZE] = {0}; // T
 */
 
 void swap_buffer(ScreenBuffer *buffer);
-void clear_buffer(ScreenBuffer *buffer, uint32 clear_mode);
+void clear_buffer(ScreenBuffer *buffer, uint32 clear_mode, real32 z_max);
 void draw_line(ScreenBuffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, Color color);
 
 void draw_wire_triangle(ScreenBuffer *buffer, fVector3 triangle[3], Color color);
-void draw_filled_triangle(ScreenBuffer *buffer, fVector3 triangle[3], Color color);
+void draw_filled_triangle(ScreenBuffer *buffer, fVector3 triangle[3], fVector3 light_intensity, Color color);
 void draw_textured_triangle(ScreenBuffer *buffer, fVector3 triangle[3], fVector3 texcoords[3], fVector3 light_intensity, Texture *texture);
 
 void draw_wire_model(ScreenBuffer *buffer, Model *model, Camera *camera, Property *property, Color color);
@@ -79,7 +79,7 @@ void draw_textured_model(ScreenBuffer *buffer, Model *model, Camera *camera, Pro
 
 void draw_wire_rectangle(ScreenBuffer *buffer,   real32 x0, real32 y0, real32 x1, real32 y1, Color color);
 void draw_filled_rectangle(ScreenBuffer *buffer, real32 x0, real32 y0, real32 x1, real32 y1, Color color);
-void DEBUG_render_z_buffer(ScreenBuffer *buffer);
+void DEBUG_render_z_buffer(ScreenBuffer *buffer, real32 z_max);
 void draw_gizmo_to_origin(ScreenBuffer *buffer, Camera *camera);
 
 void draw_text(ScreenBuffer *buffer, FontData *font_data, int32 x, int32 y, char *Text);

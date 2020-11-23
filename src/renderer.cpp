@@ -6,7 +6,6 @@
  *    - プラットフォームレイヤーは仕様として「y = 0 == 左上」である
  *    - レンダラはこれに対して「 y = 0 == 左下 」である
  *    - なので現在viewportプロジェクションで上下をひっくり返すようにしている
- *
  * */
 
 void swap_buffer(ScreenBuffer *buffer) {
@@ -15,7 +14,7 @@ void swap_buffer(ScreenBuffer *buffer) {
     buffer->back_buffer = visible_buffer;
 }
 
-void clear_buffer(ScreenBuffer *buffer, uint32 clear_mode) {
+void clear_buffer(ScreenBuffer *buffer, uint32 clear_mode, real32 z_max) {
     uint32 *buf = buffer->back_buffer;
     uint32 total_size = buffer->window_width * buffer->window_height;
 
@@ -27,9 +26,8 @@ void clear_buffer(ScreenBuffer *buffer, uint32 clear_mode) {
 
     if ((clear_mode & CLEAR_Z_BUFFER)) {
         // これ以上遠ければクリップされる
-        real32 z_buffer_furthest = 255.0;
         for (int32 i = 0; i < total_size; ++i) {
-            buffer->z_buffer[i] = z_buffer_furthest;
+            buffer->z_buffer[i] = z_max;
         }
     }
 }
@@ -85,15 +83,17 @@ void draw_line(ScreenBuffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, Col
     }
 }
 
-void DEBUG_render_z_buffer(ScreenBuffer *buffer) {
+void DEBUG_render_z_buffer(ScreenBuffer *buffer, real32 z_max) {
     uint32 *buf = buffer->back_buffer;
     for (int32 y = 0; y < buffer->window_height; ++y) {
         for(int32 x = 0; x < buffer->window_width; ++x) {
-            int32 z_buffer_position = x + y * buffer->window_width;
-            uint8 z_val = static_cast<uint8>(ceil(FP_CLAMP(buffer->z_buffer[z_buffer_position], 0.0, 254.0)));
+            int32 zbuf_pos = x + y * buffer->window_width;
+            real32 z_buffer_value = buffer->z_buffer[zbuf_pos] / z_max;
 
-            uint32 result = (z_val << 16 | z_val << 8 | z_val);
-            buf[z_buffer_position] = result;
+            uint8 z_val = static_cast<uint8>(ceil(FP_CLAMP(z_buffer_value * 255, 0.0, 255)));
+
+            uint32 result = (z_val << 24 | z_val << 16 | z_val << 8 | z_val);
+            buf[zbuf_pos] = result;
         }
     }
 }
@@ -118,13 +118,10 @@ draw_bounding_box(ScreenBuffer *buffer, BoundingBoxi2 box, Color color) {
 // 参考: https://shikihuiku.wordpress.com/2017/05/23/barycentric-coordinates%E3%81%AE%E8%A8%88%E7%AE%97%E3%81%A8perspective-correction-partial-derivative%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6/
 // ryg先生の説明 https://fgiesen.wordpress.com/2013/02/06/the-barycentric-conspirac/
 
-void draw_filled_triangle(ScreenBuffer *buffer, fVector3 vertices[3], Color color) {
+void draw_filled_triangle(ScreenBuffer *buffer, fVector3 vertices[3], fVector3 light_intensity, Color color) {
     uint32 *buf = buffer->back_buffer;
     BoundingBoxf3 bd_box = BB_fV3(vertices[0], vertices[1], vertices[2]);
-    uint32 c = color.to_uint32_argb();
-    
     real32 det_t = fdeterminant_triangle_fv3(vertices[0], vertices[1], vertices[2]);
-
     bool32 triangle_is_degenerate = fabsf(det_t) < 1;
 
     if (!triangle_is_degenerate) {
@@ -143,21 +140,28 @@ void draw_filled_triangle(ScreenBuffer *buffer, fVector3 vertices[3], Color colo
                 weight2 = fdeterminant_triangle_fv3(vertices[2], vertices[0], P) / det_t;
                 weight3 = fdeterminant_triangle_fv3(vertices[0], vertices[1], P) / det_t;
 
-                // (1 - x - y)A + xB + yC = P' なので x+y+(1-x-y) = 1 とならなければならず
-                // どれか1つの点が負数の場合三角形の外に点があることになる
                 if (weight1 < 0 || weight2 < 0 || weight3 < 0) continue;
 
-                // (1 - x - y)A + xB + yC として定義してあるので
-                // 掛け算もそれに合わせて揃えないといけない
-                real32 z_value = (vertices[0].z * weight1) + (vertices[1].z * weight2) + (vertices[2].z * weight3);
+                real32 z_value = (vertices[0].z * weight1) 
+                               + (vertices[1].z * weight2) 
+                               + (vertices[2].z * weight3);
+
+                real32 light = (light_intensity.x * weight1)
+                             + (light_intensity.y * weight2)
+                             + (light_intensity.z * weight3);
+
                 int32 position = (y * buffer->window_width) + x;
+
+                uint32 r = static_cast<uint32>(FP_CLAMP((color.r * light) * 255, 0, 255));
+                uint32 g = static_cast<uint32>(FP_CLAMP((color.g * light) * 255, 0, 255));
+                uint32 b = static_cast<uint32>(FP_CLAMP((color.b * light) * 255, 0, 255));
 
                 if (position > (buffer->window_width * buffer->window_height)) continue;
                 if (position < 0) continue;
 
                 if (buffer->z_buffer[position] > z_value) {
                     buffer->z_buffer[position] = z_value;
-                    buf[position] = c;
+                    buf[position] = (uint32)(r << 16 | g << 8 | b);
                 }
             }
         }
@@ -209,14 +213,22 @@ void draw_textured_triangle(ScreenBuffer *buffer,
 
                 if (weight1 < 0|| weight2 < 0 || weight3 < 0) continue;
 
-                real32 z_value = (vertices[0].z  * weight1) + (vertices[1].z  * weight2) + (vertices[2].z  * weight3);
+                real32 z_value = (vertices[0].z * weight1) 
+                               + (vertices[1].z * weight2) 
+                               + (vertices[2].z * weight3);
+
                 // TODO(fuzzy): ここはシェーダーの仕事
-                real32 t_x     = (texcoords[0].x * weight1) + (texcoords[1].x * weight2) + (texcoords[2].x * weight3);
-                real32 t_y     = (texcoords[0].y * weight1) + (texcoords[1].y * weight2) + (texcoords[2].y * weight3);
+                real32 t_x     = (texcoords[0].x * weight1) 
+                               + (texcoords[1].x * weight2) 
+                               + (texcoords[2].x * weight3);
+
+                real32 t_y     = (texcoords[0].y * weight1)
+                               + (texcoords[1].y * weight2)
+                               + (texcoords[2].y * weight3);
 
                 real32 light = (light_intensity.x * weight1)
-                               + (light_intensity.y * weight2)
-                               + (light_intensity.z * weight3);
+                             + (light_intensity.y * weight2)
+                             + (light_intensity.z * weight3);
 
                 int32 tex_x = t_x * texture->width;
                 int32 tex_y = texture->height - (t_y * texture->height);
@@ -248,19 +260,6 @@ void draw_wire_triangle(ScreenBuffer *buffer, fVector3 vertices[3], Color color)
     }
 }
 
-void project_viewport(fVector3 world_space[3],
-                      int32 window_width,
-                      int32 window_height)
-{
-    const real32 arbitary_depth = 255;
-
-    for (int i = 0; i < 3; ++i) {
-        world_space[i].x = ((1.0 + world_space[i].x) * 0.5) * window_width;
-        world_space[i].y = window_height - (((1.0 + world_space[i].y) * 0.5) * window_height); // NOTE(fuzzy): Yは上！！！
-        world_space[i].z = ((1.0 + world_space[i].z) * 0.5) * arbitary_depth;
-    }
-}
-
 void draw_filled_rectangle(ScreenBuffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, Color color) {
     uint32 *buf = buffer->back_buffer;
 
@@ -282,47 +281,64 @@ void draw_filled_model(ScreenBuffer *buffer, Model *model, Camera *camera, Prope
     PROFILE_FUNC;
     fVector3 AB, AC;
     fVector3 surface_normal;
+    real32 culling_result;
 
     fMat4x4 view = fMat4Lookat(camera->position, camera->target, camera->up);
     fMat4x4 projection = fMat4Perspective(camera->aspect_ratio, camera->fov, camera->z_near, camera->z_far);
+    fMat4x4 viewport = fMat4WorldToScreen(buffer->window_width, buffer->window_height, camera->z_near, camera->z_far);
 
     fMat4x4 mvp = fmul_fmat4x4(projection, view);
     for (size_t i = 0; i < model->num_face_indices; ++i) {
-        // TODO(fuzzy): Face構造体そのもののポインターをロードできるのでは？
         Face face = {0};
-        bool32 face_loaded = model->load_face(i, &face);
+        fVector3 light = { 1.0, 1.0, 1.0 };
+        fVector4 fv4_vertices[3] = {0};
 
+        bool32 face_loaded = model->load_face(i, &face);
         if (face_loaded) {
             for (int v = 0; v < 3; ++v) {
-                fVector4 fv4vert;
-                fv4vert.xyz = face.vertices[v];
-                fv4vert.w  = 1.0;
-                fv4vert = fmul_fmat4x4_fv4(mvp, fv4vert);
+                fv4_vertices[v].xyz = face.vertices[v];
+                fv4_vertices[v].w  = 1.0;
+                fv4_vertices[v] = fmul_fmat4x4_fv4(mvp, fv4_vertices[v]);
 
-                if ((fv4vert.w < 0) || (fv4vert.z > fv4vert.w) || (fv4vert.z < -fv4vert.w)) {
+                if ((fv4_vertices[v].w < 0) ||
+                    (fv4_vertices[v].z > fv4_vertices[v].w) || (fv4_vertices[v].z < -fv4_vertices[v].w)) {
                     // TODO(fuzzy):
                     // 本来ならココでfor文を使わなければ避けられるGOTOなので
                     // 時間がある時に構造考え直すように
                     goto do_not_render_and_go_next_triangles_filled;
                 }
 
-                face.vertices[v].x = fv4vert.x / fv4vert.w;
-                face.vertices[v].y = fv4vert.y / fv4vert.w;
-                face.vertices[v].z = fv4vert.z / fv4vert.w;
+                fv4_vertices[v].x /= fv4_vertices[v].w;
+                fv4_vertices[v].y /= fv4_vertices[v].w;
+                fv4_vertices[v].z /= fv4_vertices[v].w;
+                fv4_vertices[v].w = 1.0;
             }
-            AB = fsub_fv3(face.vertices[1], face.vertices[0]);
-            AC = fsub_fv3(face.vertices[2], face.vertices[0]);
+
+            AB = fsub_fv3(fv4_vertices[1].xyz, fv4_vertices[0].xyz);
+            AC = fsub_fv3(fv4_vertices[2].xyz, fv4_vertices[0].xyz);
 
             // Back-face Culling
             // 既に頂点はView Spaceにある為、-V0.N < 0 を計算する
-            // この際外積を(v2-v0)(v1-v0) と置いているので符号が違う。そのため0より小さいかどうか調べること
             surface_normal = fnormalize_fv3(fcross_fv3(AC, AB));
-            if(-fdot_fv3(face.vertices[0], surface_normal) < 0) continue;
+            culling_result = -fdot_fv3(fv4_vertices[0].xyz, surface_normal);
+            if(culling_result < 0) continue;
 
-            project_viewport(face.vertices, buffer->window_width,
-                                            buffer->window_height);
+            // TODO(fuzzy): Fullbright
+            if (face.has_normals) {
+                light.x = FP_CLAMP(fdot_fv3(fv4_vertices[0].xyz, face.normals[0]), 0.0, 1.0);
+                light.y = FP_CLAMP(fdot_fv3(fv4_vertices[1].xyz, face.normals[1]), 0.0, 1.0);
+                light.z = FP_CLAMP(fdot_fv3(fv4_vertices[2].xyz, face.normals[2]), 0.0, 1.0);
+            } else {
+                light.x = culling_result;
+                light.y = culling_result;
+                light.z = culling_result;
+            }
+            
+            for (int v = 0; v < 3; ++v) {
+                face.vertices[v] = fmul_fmat4x4_fv4(viewport, fv4_vertices[v]).xyz;
+            }
 
-            draw_filled_triangle(buffer, face.vertices, color);
+            draw_filled_triangle(buffer, face.vertices, light, color);
         }
 
 do_not_render_and_go_next_triangles_filled:;
@@ -334,8 +350,10 @@ void draw_textured_model(ScreenBuffer *buffer, Model *model, Camera *camera, Pro
     fVector3 AB, AC;
     fVector3 surface_normal;
     real32 culling_result;
+
     fMat4x4 view = fMat4Lookat(camera->position, camera->target, camera->up);
     fMat4x4 projection = fMat4Perspective(camera->aspect_ratio, camera->fov, camera->z_near, camera->z_far);
+    fMat4x4 viewport = fMat4WorldToScreen(buffer->window_width, buffer->window_height, camera->z_near, camera->z_far);
 
     fMat4x4 mvp = fmul_fmat4x4(projection, view);
     for (size_t i = 0; i < model->num_face_indices; ++i) {
@@ -344,44 +362,49 @@ void draw_textured_model(ScreenBuffer *buffer, Model *model, Camera *camera, Pro
         bool32 face_loaded = model->load_face(i, &face);
         if (face_loaded) {
             ASSERT(face.has_texcoords);
+            fVector4 fv4_vertices[3] = {0};
             for (int v = 0; v < 3; ++v) {
-                // TODO(fuzzy): シェーダーの仕事
-                fVector4 fv4vert;
-                fv4vert.xyz = face.vertices[v];
-                fv4vert.w = 1.0;
-                fv4vert = fmul_fmat4x4_fv4(mvp, fv4vert);
+                fv4_vertices[v].xyz = face.vertices[v];
+                fv4_vertices[v].w  = 1.0;
+                fv4_vertices[v] = fmul_fmat4x4_fv4(mvp, fv4_vertices[v]);
 
-                if ((fv4vert.w < 0) || (fv4vert.z > fv4vert.w) || (fv4vert.z < -fv4vert.w)) {
+                if ((fv4_vertices[v].w < 0) ||
+                    (fv4_vertices[v].z > fv4_vertices[v].w) || (fv4_vertices[v].z < -fv4_vertices[v].w)) {
                     // TODO(fuzzy):
                     // 本来ならココでfor文を使わなければ避けられるGOTOなので
                     // 時間がある時に構造考え直すように
                     goto do_not_render_and_go_next_triangles_tex;
-                } else {
-                    face.vertices[v].x = fv4vert.x / fv4vert.w;
-                    face.vertices[v].y = fv4vert.y / fv4vert.w;
-                    face.vertices[v].z = fv4vert.z / fv4vert.w;
                 }
 
+                fv4_vertices[v].x /= fv4_vertices[v].w;
+                fv4_vertices[v].y /= fv4_vertices[v].w;
+                fv4_vertices[v].z /= fv4_vertices[v].w;
+                fv4_vertices[v].w = 1.0;
             }
-            AB = fsub_fv3(face.vertices[1], face.vertices[0]);
-            AC = fsub_fv3(face.vertices[2], face.vertices[0]);
+
+            AB = fsub_fv3(fv4_vertices[1].xyz, fv4_vertices[0].xyz);
+            AC = fsub_fv3(fv4_vertices[2].xyz, fv4_vertices[0].xyz);
 
             // Back-face Culling
-            // 既に頂点はView Spaceにある為、-V0.N >= 0 を計算する
+            // 既に頂点はView Spaceにある為、-V0.N < 0 を計算する
             surface_normal = fnormalize_fv3(fcross_fv3(AC, AB));
-            culling_result = -fdot_fv3(face.vertices[0], surface_normal);
-            if(culling_result < 0) {
-                continue;
-            }
+            culling_result = -fdot_fv3(fv4_vertices[0].xyz, surface_normal);
+            if(culling_result < 0) continue;
 
+            // TODO(fuzzy): Fullbright
             if (face.has_normals) {
-                light.x = FP_CLAMP(fdot_fv3(face.vertices[0], face.normals[0]), 0.0, 1.0);
-                light.y = FP_CLAMP(fdot_fv3(face.vertices[1], face.normals[1]), 0.0, 1.0);
-                light.z = FP_CLAMP(fdot_fv3(face.vertices[2], face.normals[2]), 0.0, 1.0);
+                light.x = FP_CLAMP(fdot_fv3(fv4_vertices[0].xyz, face.normals[0]), 0.0, 1.0);
+                light.y = FP_CLAMP(fdot_fv3(fv4_vertices[1].xyz, face.normals[1]), 0.0, 1.0);
+                light.z = FP_CLAMP(fdot_fv3(fv4_vertices[2].xyz, face.normals[2]), 0.0, 1.0);
+            } else {
+                light.x = culling_result;
+                light.y = culling_result;
+                light.z = culling_result;
             }
 
-            project_viewport(face.vertices, buffer->window_width,
-                                            buffer->window_height);
+            for (int v = 0; v < 3; ++v) {
+                face.vertices[v] = fmul_fmat4x4_fv4(viewport, fv4_vertices[v]).xyz;
+            }
 
             draw_textured_triangle(buffer, face.vertices, face.texcoords, light, texture);
 
@@ -401,6 +424,7 @@ void draw_wire_model(ScreenBuffer *buffer, Model *model, Camera *camera, Propert
     PROFILE_FUNC;
     fMat4x4 view = fMat4Lookat(camera->position, camera->target, camera->up);
     fMat4x4 projection = fMat4Perspective(camera->aspect_ratio, camera->fov, camera->z_near, camera->z_far);
+    fMat4x4 viewport = fMat4WorldToScreen(buffer->window_width, buffer->window_height, camera->z_near, camera->z_far);
 
     fMat4x4 mvp = fmul_fmat4x4(projection, view);
     for (size_t i = 0; i < model->num_face_indices; ++i) {
@@ -420,14 +444,14 @@ void draw_wire_model(ScreenBuffer *buffer, Model *model, Camera *camera, Propert
                     goto do_not_render_and_go_next_triangles_wireframe;
                 }
 
-               face.vertices[v].x = fv4vert.x / fv4vert.w;
-               face.vertices[v].y = fv4vert.y / fv4vert.w;
-               face.vertices[v].z = fv4vert.z / fv4vert.w;
+               fv4vert.x /= fv4vert.w;
+               fv4vert.y /= fv4vert.w;
+               fv4vert.z /= fv4vert.w;
+               fv4vert.w = 1.0;
+
+               fv4vert = fmul_fmat4x4_fv4(viewport, fv4vert);
+               face.vertices[v] = fv4vert.xyz;
             }
-
-            project_viewport(face.vertices, buffer->window_width,
-                                            buffer->window_height);
-
             draw_wire_triangle(buffer, face.vertices, color);
         } else {
             TRACE("failed to load model");

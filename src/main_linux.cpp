@@ -346,10 +346,10 @@ int main(int argc, char **argv) {
 
                 bool32 draw_z_buffer = 0;
                 bool32 draw_wireframe = 0;
-                clear_buffer(&buffer, CLEAR_COLOR_BUFFER | CLEAR_Z_BUFFER);
+                clear_buffer(&drawing_buffer, CLEAR_COLOR_BUFFER | CLEAR_Z_BUFFER, camera.z_far);
 
                 while (running) {
-                    clear_buffer(&buffer, CLEAR_COLOR_BUFFER | CLEAR_Z_BUFFER);
+                    clear_buffer(&drawing_buffer, CLEAR_COLOR_BUFFER | CLEAR_Z_BUFFER, camera.z_far);
 
                     clock_gettime(CLOCK_MONOTONIC_RAW, &_timespec_now);
                     start_time = (_timespec_now.tv_sec * time_frequency) + _timespec_now.tv_nsec;
@@ -428,17 +428,16 @@ int main(int argc, char **argv) {
                         }
                     }
                     Color c = rgb_opaque(1.0, 1.0, 1.0);
-
                     if (!input.debug_menu_key) update_camera_with_input(&camera, &input, 0.016);
 
                     if (draw_wireframe) {
-                        draw_wire_model(&buffer, &model, &camera, c);
+                        draw_wire_model(&buffer, &model, &camera, &property, c);
                     } else {
-                        draw_textured_model(&buffer, &model, &camera, &texture);
+                        draw_textured_model(&buffer, &model, &camera, &property, &texture);
                     }
 
                     if (draw_z_buffer) {
-                        DEBUG_render_z_buffer(&buffer);
+                        DEBUG_render_z_buffer(&buffer, camera.z_far);
                     }
 
                     if (input.debug_menu_key) {

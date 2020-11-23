@@ -342,14 +342,14 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             }
 
             Model model = {0};
-            if (!load_simple_model("african_head.obj", &model)) {
+            if (!load_simple_model("teapot.obj", &model)) {
                 return 0;
             }
 
-            Texture texture = {0};
-            if (!load_simple_texture("african_head.tga", &texture)) {
-                return 0;
-            }
+            // Texture texture = {0};
+            // if (!load_simple_texture("african_head.tga", &texture)) {
+            //     return 0;
+            // }
 
 
             Property property;
@@ -396,7 +396,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             real32 delta_time = 0.016; // delta time 60fps
             bool32 wireframe_on = 0;
             bool32 draw_z_buffer = 0;
-            clear_buffer(&drawing_buffer, CLEAR_COLOR_BUFFER | CLEAR_Z_BUFFER);
+            clear_buffer(&drawing_buffer, CLEAR_COLOR_BUFFER | CLEAR_Z_BUFFER, camera.z_far);
 
             while(running) {
                 HDC context = GetDC(window);
@@ -406,7 +406,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
                 render_buffer(context, &client_rect);
                 ReleaseDC(window, context);
 
-                clear_buffer(&drawing_buffer, CLEAR_COLOR_BUFFER | CLEAR_Z_BUFFER);
+                clear_buffer(&drawing_buffer, CLEAR_COLOR_BUFFER | CLEAR_Z_BUFFER, camera.z_far);
 
                 while(PeekMessage(&message, window, 0, 0, PM_REMOVE)) {
                     TranslateMessage(&message);
@@ -419,11 +419,12 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
                 if (wireframe_on) {
                     draw_wire_model(&drawing_buffer, &model, &camera, &property, color);
                 } else {
-                    draw_textured_model(&drawing_buffer, &model, &camera, &property, &texture);
+                    draw_filled_model(&drawing_buffer, &model, &camera, &property, color);
+                    // draw_textured_model(&drawing_buffer, &model, &camera, &property, &texture);
                 }
 
                 if (draw_z_buffer) {
-                    DEBUG_render_z_buffer(&drawing_buffer);
+                    DEBUG_render_z_buffer(&drawing_buffer, camera.z_far);
                 }
 
                 if (input.debug_menu_key) {
@@ -482,7 +483,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
                 start_cycle = end_cycle;
             }
 
-            stbi_image_free(texture.data);
+            // stbi_image_free(texture.data);
             VirtualFree(model.vertices,       0, MEM_RELEASE);
             VirtualFree(model.texcoords,      0, MEM_RELEASE);
             VirtualFree(model.normals,        0, MEM_RELEASE);

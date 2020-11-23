@@ -142,8 +142,7 @@ BB_fV3(fVector3 one, fVector3 two, fVector3 three) {
 
 internal fMat4x4 fMat4Lookat(fVector3 position, fVector3 target, fVector3 up);
 internal fMat4x4 fMat4Perspective(real32 aspect_ratio, real32 fovy, real32 z_near, real32 z_far);
-internal fMat4x4 fMat4WorldToScreen(real32 width, real32 height, real32 depth);
-internal fMat4x4 fMat4ScreenToWorld(real32 width, real32 height, real32 depth);
+internal fMat4x4 fMat4WorldToScreen(real32 width, real32 height, real32 z_near, real32 z_far);
 
 internal inline fVector3 fneg_fv3(fVector3 A);
 internal inline fVector3 fadd_fv3(fVector3 A, fVector3 B);

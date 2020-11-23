@@ -70,16 +70,16 @@ fMat4Perspective(real32 aspect_ratio, real32 fov_y, real32 z_near, real32 z_far)
 }
 
 internal fMat4x4
-fMat4WorldToScreen(real32 width, real32 height, real32 depth) {
+fMat4WorldToScreen(real32 width, real32 height, real32 z_near, real32 z_far) {
     fMat4x4 result = {0};
 
     result.row[0].col[0] = width / 2;
     result.row[1].col[1] = -height / 2;
-    result.row[2].col[2] = depth / 2;
+    result.row[2].col[2] = (z_far - z_near) / 2;
 
     result.row[0].col[3] = width / 2;
     result.row[1].col[3] = height / 2;
-    result.row[2].col[3] = depth / 2;
+    result.row[2].col[3] = (z_far + z_near) / 2;
 
     result.row[3].col[3] = 1.0;
     return result;
