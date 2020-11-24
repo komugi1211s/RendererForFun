@@ -76,13 +76,15 @@ void TempArena::close() {
  * =========================================
  * */
 
-void profile_begin(const char *name) {
+void profile_begin(char *name) {
     size_t length = strlen(name);
-    ProfileInfo *info = 0;
+    ProfileInfo *info = NULL;
     for (int32 i = 0; i < profile_info_count; ++i) {
-        if (strcmp(profile_info[i].name, name) == 0) {
-            info = &profile_info[i];
-            break;
+        if (profile_info[i].name_length == length) {
+            if (strcmp(profile_info[i].name, name) == 0) {
+                info = &profile_info[i];
+                break;
+            }
         }
     }
 
@@ -90,33 +92,35 @@ void profile_begin(const char *name) {
         if((profile_info_count + 1) < PROFILE_INFO_MAX_SIZE) {
             size_t new_index = profile_info_count++;
             info = (profile_info + new_index);
-            info->name = name;
-            info->cycle_count = __rdtsc();
+
+            info->name          = name;
+            info->name_length   = length;
+            info->cycle_elapsed = 0;
+            info->cycle_count   = __rdtsc();
         } else {
             return;
         }
     }
-
-    info->is_started = 1;
     return;
 }
 
-void profile_end(const char *name) {
+void profile_end(char *name) {
     uint64 end = __rdtsc();
     size_t length = strlen(name);
     ProfileInfo *info = NULL;
 
     for (int32 i = 0; i < profile_info_count; ++i) {
-        if (strcmp(profile_info[i].name, name) == 0) {
-            info = &profile_info[i];
-            break;
+        if (profile_info[i].name_length == length) {
+            if (strcmp(profile_info[i].name, name) == 0) {
+                info = &profile_info[i];
+                break;
+            }
         }
     }
 
     if (info) {
-        info->is_started = 0;
         info->cycle_elapsed = end - info->cycle_count;
-        info->cycle_count = end;
+        info->cycle_count   = end;
     }
 }
 

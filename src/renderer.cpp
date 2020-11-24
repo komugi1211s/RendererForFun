@@ -142,8 +142,8 @@ void draw_filled_triangle(ScreenBuffer *buffer, fVector3 vertices[3], fVector3 l
 
                 if (weight1 < 0 || weight2 < 0 || weight3 < 0) continue;
 
-                real32 z_value = (vertices[0].z * weight1) 
-                               + (vertices[1].z * weight2) 
+                real32 z_value = (vertices[0].z * weight1)
+                               + (vertices[1].z * weight2)
                                + (vertices[2].z * weight3);
 
                 real32 light = (light_intensity.x * weight1)
@@ -175,7 +175,7 @@ void draw_textured_triangle(ScreenBuffer *buffer,
                             fVector3 light_intensity, // TODO(fuzzy): Technical Debt.
                             Texture *texture)
 {
-    PROFILE_FUNC
+    PROFILE_FUNC;
     uint32 *buf = buffer->back_buffer;
     BoundingBoxf3 bd_box = BB_fV3(vertices[0], vertices[1], vertices[2]);
     // NOTE(fuzzy):
@@ -213,13 +213,13 @@ void draw_textured_triangle(ScreenBuffer *buffer,
 
                 if (weight1 < 0|| weight2 < 0 || weight3 < 0) continue;
 
-                real32 z_value = (vertices[0].z * weight1) 
-                               + (vertices[1].z * weight2) 
+                real32 z_value = (vertices[0].z * weight1)
+                               + (vertices[1].z * weight2)
                                + (vertices[2].z * weight3);
 
                 // TODO(fuzzy): ここはシェーダーの仕事
-                real32 t_x     = (texcoords[0].x * weight1) 
-                               + (texcoords[1].x * weight2) 
+                real32 t_x     = (texcoords[0].x * weight1)
+                               + (texcoords[1].x * weight2)
                                + (texcoords[2].x * weight3);
 
                 real32 t_y     = (texcoords[0].y * weight1)
@@ -249,7 +249,7 @@ void draw_textured_triangle(ScreenBuffer *buffer,
 }
 
 void draw_wire_triangle(ScreenBuffer *buffer, fVector3 vertices[3], Color color) {
-    PROFILE_FUNC
+    PROFILE_FUNC;
     real32 det_T = fdeterminant_triangle_fv3(vertices[0], vertices[1], vertices[2]);
     bool32 triangle_is_degenerate = fabsf(det_T) < 1;
 
@@ -262,7 +262,6 @@ void draw_wire_triangle(ScreenBuffer *buffer, fVector3 vertices[3], Color color)
 
 void draw_filled_rectangle(ScreenBuffer *buffer, int32 x0, int32 y0, int32 x1, int32 y1, Color color) {
     uint32 *buf = buffer->back_buffer;
-
     if (x0 < 0 || y0 < 0) return;
     if (x1 > buffer->window_width || y1 > buffer->window_height) return;
 
@@ -278,7 +277,7 @@ void draw_filled_rectangle(ScreenBuffer *buffer, int32 x0, int32 y0, int32 x1, i
 }
 
 void draw_filled_model(ScreenBuffer *buffer, Model *model, Camera *camera, Property *property, Color color) {
-    PROFILE_FUNC;
+    ProfileScope profile_scope(__func__);
     fVector3 AB, AC;
     fVector3 surface_normal;
     real32 culling_result;
@@ -333,7 +332,7 @@ void draw_filled_model(ScreenBuffer *buffer, Model *model, Camera *camera, Prope
                 light.y = culling_result;
                 light.z = culling_result;
             }
-            
+
             for (int v = 0; v < 3; ++v) {
                 face.vertices[v] = fmul_fmat4x4_fv4(viewport, fv4_vertices[v]).xyz;
             }
@@ -408,8 +407,6 @@ void draw_textured_model(ScreenBuffer *buffer, Model *model, Camera *camera, Pro
 
             draw_textured_triangle(buffer, face.vertices, face.texcoords, light, texture);
 
-            // Triangleを構成するVertexのうち、どれか１つのZの位置がレンダリングできない範囲内にあるので
-            // ここに飛んでTriangle自体のレンダリングを避ける
             // TODO(fuzzy):
             // 本来なら -1.0 < z < 1.0 の状況下でクリップが行われる際、
             // その三角形全体をクリップするのではなく、本来ならクリップされる位置を補う形の頂点を生成して

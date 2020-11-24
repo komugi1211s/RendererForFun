@@ -22,10 +22,11 @@
 
 global_variable bool32         running = 1;
 global_variable BITMAPINFO     bitmap_info;
-global_variable ScreenBuffer drawing_buffer;
+global_variable ScreenBuffer   drawing_buffer;
 global_variable Input          input;
 
 void render_buffer(HDC context, RECT *client_rect) {
+    PROFILE_FUNC;
     uint32 *current_buffer = drawing_buffer.back_buffer;
     int32 client_width  = client_rect->right  - client_rect->left;
     int32 client_height = client_rect->bottom - client_rect->top;
@@ -136,12 +137,17 @@ bool32 load_simple_model(char *model_name, Model *model) {
         size_t file_length = ftell(file);
         fseek(file, 0, SEEK_SET);
         // TODO(fuzzy): @MemoryLeak
-        // Modelに渡されるデータは全部フリーされずにずっと残ったままになるので、
-        // 新しいモデルをロードする機能の実装を行う際は**必ず**アロケーターを先に書くこと。 
+        // 現状はモデルのアンロード・ロードを実行時にGUIから行う機能を持っていない為、
+        // Modelに渡されるデータは全部解放されずにずっと残ったままになる。
+        //
+        // プロセス終了時にプロセスに割り当てられたメモリは全て掃除されるので現状は未だ問題はないが、メモリリークであることに変わりはない。
+        // 新しいモデルをロードする機能の実装を行う際は**必ず**アロケーターを先に書くか、
+        // RAIIなどでデータの破棄時に自動で解放するようにする事。
+
         char *buffer = (char *)VirtualAlloc(0, file_length, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
         model->vertices =
             (fVector3 *)VirtualAlloc(0, file_length * sizeof(fVector3), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-        
+
         model->normals =
             (fVector3 *)VirtualAlloc(0, file_length * sizeof(fVector3), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
@@ -192,6 +198,15 @@ bool32 load_simple_font(const char *font_name, FontData *font_data, int32 window
     }
 }
 
+bool32 file_extension_matches(char *file_name, const char *expect_extension) {
+    char *extension = strrchr(file_name, '.');
+    if (extension && extension != file_name) {
+        return (strcmp(extension+1, expect_extension) == 0);
+    } else {
+        return 0;
+    }
+}
+
 #define EACH_STRING_SIZE 1024
 #define BUCKET_SIZE 16
 char *format(const char * __restrict message, ...) {
@@ -212,6 +227,7 @@ char *format(const char * __restrict message, ...) {
 }
 
 void update_camera_with_input(Camera *camera, Input *input, real32 dt) {
+    PROFILE_FUNC;
     if (!(input->forward && input->backward)) {
         fVector3 move_towards = fmul_fv3_fscalar(camera->target, 2.0 * dt);
 
@@ -258,19 +274,30 @@ void update_camera_with_input(Camera *camera, Input *input, real32 dt) {
     }
 }
 
-void draw_debug_menu(ScreenBuffer *buffer, Input *input, FontData *font_data, Camera *camera, Model *model, real32 ms_per_frame, real32 fps, uint64 cycle_elapsed) {
+void draw_debug_info(ScreenBuffer *buffer,
+                     Input        *input,
+                     FontData     *font_data,
+                     Camera       *camera,
+                     Model        *model,
+                     real32 ms_per_frame, real32 fps, uint64 cycle_elapsed)
+{
     Color box_color = rgba(0.1, 0.1, 0.1, 0.2);
-    draw_filled_rectangle(buffer, 10, 50, 600, 300, box_color);
+    int32 x_window_size = 500;
+    int32 y_window_size = 300;
+    int32 x_window_pos = 5;
+    int32 y_window_pos = 50;
+
+    draw_filled_rectangle(buffer, x_window_pos, y_window_pos, x_window_pos + x_window_size, y_window_pos + y_window_size, box_color);
 
     int32 x = 20;
     int32 y = 60;
     for (int32 i = 0; i < profile_info_count; ++i) {
-        if (!profile_info[i].is_started) {
-            draw_text(buffer, font_data, x, y, format("[%d] %s | %lu cy", i, profile_info[i].name, profile_info[i].cycle_elapsed));
-            y += 20;
-        }
+        draw_text(buffer, font_data, x, y, format("[%d] %s | %lu cy", i, profile_info[i].name, profile_info[i].cycle_elapsed));
+        y += 20;
     }
     y += 10;
+    draw_text(buffer, font_data, x, y, format("%5.2f MpF(%5.2f FPS), %lu Cycle Elapsed", ms_per_frame, fps, cycle_elapsed));
+    y += 20;
     draw_text(buffer, font_data, x, y, (char *)"Camera");
     x += 40;
     y += 20;
@@ -299,6 +326,13 @@ int32 WINAPI
 WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolete) {
     int32 window_width = 1600;
     int32 window_height = 900;
+    if (__argc <= 1) {
+        MessageBox(NULL,
+                   L"コマンドラインから "main.exe [OBJファイル名] [テクスチャ名(optional)] のように起動して下さい。",
+                   NULL,
+                   MB_OK);
+        return 0;
+    }
 
     FILE *fp;
     AllocConsole();
@@ -326,47 +360,34 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             bitmap_info.bmiHeader.biBitCount = 32;
             bitmap_info.bmiHeader.biCompression = BI_RGB;
 
-            size_t core_memory_size = GIGABYTES(2);
+            size_t core_memory_size = MEBAGYTES(128);
             void *memory = VirtualAlloc(0, core_memory_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            if (!memory) {
+                MessageBox(window, "128MBのメモリの割り当てに失敗しました。", NULL, MB_OK);
+                return 0;
+            }
 
             Arena core_arena((uint8*)memory, core_memory_size);
-            
-            drawing_buffer.window_width = window_width;
-            drawing_buffer.window_height = window_height;
-            drawing_buffer.depth = 32;
 
-            FontData font_data = {0};
-            if (!load_simple_font("inconsolata.ttf", &font_data, window_height)) {
-                TRACE("STB FONT LOAD FAILED.");
-                return 0;
-            }
-
-            Model model = {0};
-            if (!load_simple_model("teapot.obj", &model)) {
-                return 0;
-            }
-
-            // Texture texture = {0};
-            // if (!load_simple_texture("african_head.tga", &texture)) {
-            //     return 0;
-            // }
-
-
+            // =======================================
+            // レンダリングに必要な物全般をセットアップ
+            // =======================================
+            // TODO(fuzzy): 未だ使っていない
             Property property;
             property.position = fVec3(0.0, 0.0, 0.0);
             property.rotation = fVec3(0.0, 0.0, 0.0);
             property.scale    = fVec3(1.0, 1.0, 1.0);
 
             ImmStyle default_style;
-            default_style.bg_color = rgba(0.25, 0.25, 0.25, 0.5);
-            default_style.hot_color = rgba(0.50, 0.0, 0.0, 0.5);
+            default_style.bg_color = rgba(0.1, 0.1, 0.1, 0.5);
+            default_style.hot_color = rgba(0.5, 0.0, 0.0, 0.5);
             default_style.active_color = rgba(0.0, 0.5, 0.0, 0.5);
-
             imm_set_style(default_style);
 
-            Color bg = rgb_opaque(0.0, 0.2, 0.2);
+            drawing_buffer.window_width = window_width;
+            drawing_buffer.window_height = window_height;
+            drawing_buffer.depth = 32;
 
-            // 一つのアロケーションに全部叩き込む
             size_t color_buffer_size = (window_width * window_height * sizeof(uint32));
             size_t z_buffer_size     = (window_width * window_height * sizeof(real32));
 
@@ -374,7 +395,30 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             drawing_buffer.back_buffer    = (uint32 *)core_arena.alloc(color_buffer_size);
             drawing_buffer.z_buffer       = (real32 *)core_arena.alloc(z_buffer_size);
 
-            ASSERT(drawing_buffer.visible_buffer && drawing_buffer.z_buffer);
+            Camera camera;
+            default_camera(&camera);
+
+            FontData font_data = {0};
+            if (!load_simple_font("inconsolata.ttf", &font_data, window_height)) {
+                MessageBox(window, "inconsolata.ttfの読み込みに失敗しました。", NULL, MB_OK);
+                TRACE("STB FONT LOAD FAILED.");
+                return 0;
+            }
+
+            Model model = {0};
+            if (!load_simple_model("teapot.obj", &model)) {
+                MessageBox(window, "指定されたモデルがロードできませんでした。", NULL, MB_OK);
+                return 0;
+            }
+
+            Texture texture = {0};
+            if (!load_simple_texture("african_head.tga", &texture)) {
+                // NOTE(fuzzy): @MemoryLeak
+                // どの道即終了するのでfree(model->... は行わない
+                MessageBox(window, "指定されたテクスチャがロードできませんでした。", NULL, MB_OK);
+                return 0;
+            }
+
             MSG message;
 
             LARGE_INTEGER freq;
@@ -384,42 +428,36 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             LARGE_INTEGER start_time, end_time;
             QueryPerformanceCounter(&start_time);
 
-            uint64 start_cycle, end_cycle;
-            uint64 time_elapsed, cycle_elapsed;
-            real64 ms_per_frame, fps;
+            uint64 start_cycle; // NOTE(fuzzy): while文の直前に初期化する
+            uint64 time_elapsed  = 0;
+            uint64 cycle_elapsed = 0;
 
-            Camera camera = {0};
-            default_camera(&camera);
+            real64 ms_per_frame  = 0;
+            real64 fps           = 0;
 
-            start_cycle = __rdtsc();
-
-            real32 delta_time = 0.016; // delta time 60fps
-            bool32 wireframe_on = 0;
-            bool32 draw_z_buffer = 0;
+            Color fg_color = rgb_opaque(1.0, 1.0, 1.0);
+            real32 delta_time     = 0.016;
+            bool32 draw_z_buffer  = 0;
+            bool32 wireframe_on   = 0;
             clear_buffer(&drawing_buffer, CLEAR_COLOR_BUFFER | CLEAR_Z_BUFFER, camera.z_far);
 
+            start_cycle = __rdtsc();
             while(running) {
-                HDC context = GetDC(window);
-                RECT client_rect;
-                GetClientRect(window, &client_rect);
-
-                render_buffer(context, &client_rect);
-                ReleaseDC(window, context);
-
-                clear_buffer(&drawing_buffer, CLEAR_COLOR_BUFFER | CLEAR_Z_BUFFER, camera.z_far);
+                PROFILE("Clear buffer before rendering") {
+                    clear_buffer(&drawing_buffer, CLEAR_COLOR_BUFFER | CLEAR_Z_BUFFER, camera.z_far);
+                }
 
                 while(PeekMessage(&message, window, 0, 0, PM_REMOVE)) {
                     TranslateMessage(&message);
                     DispatchMessage(&message);
                 }
 
-                Color color = rgb_opaque(1.0, 1.0, 1.0);
-                update_camera_with_input(&camera, &input, delta_time);
+                if(!input.debug_menu_key) update_camera_with_input(&camera, &input, delta_time);
 
                 if (wireframe_on) {
-                    draw_wire_model(&drawing_buffer, &model, &camera, &property, color);
+                    draw_wire_model(&drawing_buffer, &model, &camera, &property, fg_color);
                 } else {
-                    draw_filled_model(&drawing_buffer, &model, &camera, &property, color);
+                    draw_filled_model(&drawing_buffer, &model, &camera, &property, fg_color);
                     // draw_textured_model(&drawing_buffer, &model, &camera, &property, &texture);
                 }
 
@@ -428,52 +466,60 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
                 }
 
                 if (input.debug_menu_key) {
-                    draw_debug_menu(&drawing_buffer, &input, &font_data, &camera, &model,
-                                    ms_per_frame, fps, cycle_elapsed);
-                    imm_begin(&font_data, &input);
-                    imm_draw_top_bar(&drawing_buffer, drawing_buffer.window_width, 30);
-                    int32 topbar_y_size = 30;
-                    int32 current_x = 0;
-                    int32 min_width = 120;
-                    int32 actual_width = 0;
-                    {
-                        char *name = (char *)"Reset Camera";
-                        if(imm_draw_text_button(&drawing_buffer, current_x, 0, min_width, topbar_y_size, name, &actual_width)) {
-                            default_camera(&camera);
+                    PROFILE("Drawing Debug Menu") {
+                        draw_debug_info(&drawing_buffer, &input, &font_data, &camera, &model,
+                                        ms_per_frame, fps, cycle_elapsed);
+                        imm_begin(&font_data, &input);
+                        imm_draw_top_bar(&drawing_buffer, drawing_buffer.window_width, 30);
+                        int32 topbar_y_size = 30;
+                        int32 current_x = 0;
+                        int32 min_width = 120;
+                        int32 actual_width = 0;
+                        {
+                            char *name = (char *)"Reset Camera";
+                            if(imm_draw_text_button(&drawing_buffer, current_x, 0, min_width, topbar_y_size, name, &actual_width)) {
+                                default_camera(&camera);
+                            }
+                            current_x += actual_width;
                         }
-                        current_x += actual_width;
-                    }
-                    {
-                        char *name = (char *)"Z Buffer";
-                        if(imm_draw_text_button(&drawing_buffer, current_x, 0, min_width, topbar_y_size, name, &actual_width)) {
-                            draw_z_buffer = !draw_z_buffer;
-                            wireframe_on = 0;
+                        {
+                            char *name = (char *)"Z Buffer";
+                            if(imm_draw_text_button(&drawing_buffer, current_x, 0, min_width, topbar_y_size, name, &actual_width)) {
+                                draw_z_buffer = !draw_z_buffer;
+                                wireframe_on = 0;
+                            }
+                            current_x += actual_width;
                         }
-                        current_x += actual_width;
-                    }
-                    {
-                        char *name = (char *)"Wireframe";
-                        if(imm_draw_text_button(&drawing_buffer, current_x, 0, min_width, topbar_y_size, name, &actual_width)) {
-                            wireframe_on = !wireframe_on;
-                            draw_z_buffer = 0;
+                        {
+                            char *name = (char *)"Wireframe";
+                            if(imm_draw_text_button(&drawing_buffer, current_x, 0, min_width, topbar_y_size, name, &actual_width)) {
+                                wireframe_on = !wireframe_on;
+                                draw_z_buffer = 0;
+                            }
+                            current_x += actual_width;
                         }
-                        current_x += actual_width;
+                        {
+                            char *name = format("FOV: %06.2f", camera.fov);
+                            int32 fixed_width = 170;
+                            imm_draw_text_slider(&drawing_buffer, current_x, 0, fixed_width, topbar_y_size, name, 0.0, 120.0, &camera.fov);
+                            current_x += fixed_width;
+                        }
+                        imm_end();
                     }
-                    {
-                        char *name = format("FOV: %06.2f", camera.fov);
-                        int32 fixed_width = 170;
-                        imm_draw_text_slider(&drawing_buffer, current_x, 0, fixed_width, topbar_y_size, name, 0.0, 120.0, &camera.fov);
-                        current_x += fixed_width;
-                    }
-                    imm_end();
                 }
+
+                HDC context = GetDC(window);
+                RECT client_rect;
+                GetClientRect(window, &client_rect);
+                render_buffer(context, &client_rect);
+                ReleaseDC(window, context);
 
                 swap_buffer(&drawing_buffer);
                 input.prev_mouse = input.mouse;
-                input.prev_mouse = input.mouse;
 
+                LARGE_INTEGER end_time;
                 QueryPerformanceCounter(&end_time);
-                end_cycle = __rdtsc();
+                uint64 end_cycle = __rdtsc();
                 time_elapsed  = end_time.QuadPart - start_time.QuadPart;
                 cycle_elapsed = end_cycle - start_cycle;
                 ms_per_frame = (1000.0f * (real64)time_elapsed) / (real64)time_frequency;

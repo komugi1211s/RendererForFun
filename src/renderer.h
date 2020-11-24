@@ -31,13 +31,6 @@ typedef struct Camera {
     real32 pitch, yaw;
 } Camera;
 
-/*
- * fMat4x4 mvp = renderer.mvp();
- *
- *
- *
- * */
-
 
 global_variable const uint32 CLEAR_COLOR_BUFFER = 1 << 1;
 global_variable const uint32 CLEAR_Z_BUFFER     = 1 << 2;

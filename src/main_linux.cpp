@@ -25,6 +25,7 @@ global_variable Atom wm_protocols;
 global_variable Atom wm_delete_window;
 
 void update_camera_with_input(Camera *camera, Input *input, real32 dt) {
+    PROFILE_FUNC;
     if (!(input->forward && input->backward)) {
         fVector3 move_towards = fmul_fv3_fscalar(camera->target, 2.0 * dt);
 
@@ -70,6 +71,7 @@ void update_camera_with_input(Camera *camera, Input *input, real32 dt) {
 }
 
 void update_xwindow_with_drawbuffer(Display *display, Window window, GC context, ScreenBuffer *buffer) {
+    PROFILE_FUNC;
     uint32 *drawing_buffer = buffer->back_buffer;
 
     XImage image;
@@ -106,6 +108,15 @@ bool32 load_simple_font(const char *font_name, FontData *font_data, int32 window
     }
 }
 
+bool32 file_extension_matches(char *file_name, const char *expect_extension) {
+    char *extension = strrchr(file_name, '.');
+    if (extension && extension != file_name) {
+        return (strcmp(extension+1, expect_extension) == 0);
+    } else {
+        return 0;
+    }
+}
+
 bool32 load_simple_texture(const char *tex_name, Texture *texture) {
     texture->data = stbi_load(tex_name,
                               &texture->width,
@@ -128,8 +139,12 @@ bool32 load_simple_model(const char *model_name, Model *model) {
         fseek(file, 0, SEEK_SET);
 
         // TODO(fuzzy): @MemoryLeak
-        // Modelに渡されるデータは全部フリーされずにずっと残ったままになるので、
-        // 新しいモデルをロードする機能の実装を行う際は**必ず**アロケーターを先に書くこと。
+        // 現状はモデルのアンロード・ロードを実行時にGUIから行う機能を持っていない為、
+        // Modelに渡されるデータは全部解放されずにずっと残ったままになる。
+        //
+        // プロセス終了時にプロセスに割り当てられたメモリは全て掃除されるので現状は未だ問題はないが、メモリリークであることに変わりはない。
+        // 新しいモデルをロードする機能の実装を行う際は**必ず**アロケーターを先に書くか、
+        // RAIIなどでデータの破棄時に自動で解放するようにする事。
 
         char *buffer     = (char *)malloc(file_length + 1);
         model->vertices  = (fVector3 *)malloc(file_length * sizeof(fVector3));
@@ -182,6 +197,7 @@ char *format(const char * __restrict message, ...) {
 
 // TODO(fuzzy):
 // このまま行くと引数50個ぐらい持ってしまう…
+// エンジン用に適当な構造体を作り（EngineContextとか）纏めるべき。
 void draw_debug_info(ScreenBuffer *buffer,
                      Input *input,
                      FontData *font_data,
@@ -199,10 +215,12 @@ void draw_debug_info(ScreenBuffer *buffer,
     int32 x = 10;
     int32 y = 60;
     for (int32 i = 0; i < profile_info_count; ++i) {
-        draw_text(buffer, font_data, x, y, format("[%d] %s | %lu cy", i, profile_info[i].name, profile_info[i].cycle_elapsed));
+        draw_text(buffer, font_data, x, y, format("[%d] %s | %llu cy", i, profile_info[i].name, profile_info[i].cycle_elapsed));
         y += 20;
     }
     y += 10;
+    draw_text(buffer, font_data, x, y, format("%5.2f MpF(%5.2f FPS), %llu Cycle Elapsed", ms_per_frame, fps, cycle_elapsed));
+    y += 20;
     draw_text(buffer, font_data, x, y, (char *)"Camera");
     x += 10;
     y += 20;
@@ -211,6 +229,8 @@ void draw_debug_info(ScreenBuffer *buffer,
     draw_text(buffer, font_data, x, y, format("LookAt:   [%2f, %2f, %2f]", camera->target.x, camera->target.y, camera->target.z));
     y += 20;
     draw_text(buffer, font_data, x, y, format("Yaw, Pitch: [%2f, %2f]", camera->yaw, camera->pitch));
+    y += 20;
+    x -= 40;
 }
 
 
@@ -227,7 +247,13 @@ void default_camera(Camera *cam) {
 }
 
 int main(int argc, char **argv) {
+    if (argc <= 1) {
+        printf("usage: executable [obj file name] [optional: texture name]\n");
+        return 0;
+    }
+
     Display *display = XOpenDisplay(0);
+
     if (display) {
         wm_protocols = XInternAtom(display, "WM_PROTOCOLS", 0);
         wm_delete_window = XInternAtom(display, "WM_DELETE_WINDOW", 0);
@@ -252,7 +278,6 @@ int main(int argc, char **argv) {
 
             window_attr.event_mask = StructureNotifyMask | ExposureMask | KeyPressMask | KeyReleaseMask | PointerMotionMask | ButtonPressMask | ButtonReleaseMask;
             uint64 attr_mask = CWBackPixel | CWColormap | CWEventMask;
-            TRACE("Visual info Depth: %d", vis_info.depth);
 
             Window my_window = XCreateWindow(display,      desktop_window,
                                              start_x,      start_y,
@@ -271,85 +296,110 @@ int main(int argc, char **argv) {
                     hint.min_height = hint.max_height = window_height;
                     XSetWMNormalHints(display, my_window, &hint);
                 }
-                GC context = XCreateGC(display, my_window, 0, 0); // LEAK(fuzzy): 終了時XFreeGCがいる
+                GC context = XCreateGC(display, my_window, 0, 0); // NOTE(fuzzy): @MemoryLeak 終了時XFreeGCがいる
 
                 XMapWindow(display, my_window);
                 XFlush(display);
 
-
                 size_t core_memory_size = MEGABYTES(128);
                 void *memory = malloc(core_memory_size);
+                if (!memory) {
+                    printf("128MBのメモリの割り当てに失敗しました。\n");
+                    return 0;
+                }
 
                 Arena core_arena((uint8*)memory, core_memory_size);
-
 
                 // =======================================
                 // レンダリングに必要な物全般をセットアップ
                 // =======================================
-                FontData font_data = {0};
-                if (!load_simple_font("inconsolata.ttf", &font_data, window_height)) {
-                    TRACE("STB FONT LOAD FAILED.");
-                    return 0;
-                }
+                // TODO(fuzzy): 未だ使っていない
+                Property property;
+                property.position = fVec3(0.0, 0.0, 0.0);
+                property.rotation = fVec3(0.0, 0.0, 0.0);
+                property.scale    = fVec3(1.0, 1.0, 1.0);
 
                 ImmStyle default_style;
                 default_style.bg_color = rgba(0.1, 0.1, 0.1, 0.5);
-                default_style.hot_color = rgba(0.50, 0.0, 0.0, 0.5);
+                default_style.hot_color = rgba(0.5, 0.0, 0.0, 0.5);
                 default_style.active_color = rgba(0.0, 0.5, 0.0, 0.5);
                 imm_set_style(default_style);
 
-                Model model = {0};
-                if (!load_simple_model("african_head.obj", &model)) {
-                    return 0;
-                }
-
-                Texture texture = {0};
-                if (!load_simple_texture("african_head.tga", &texture)) {
-                    // どの道即終了するのでfree(model->... は行わない
-                    return 0;
-                }
-
-                ScreenBuffer buffer = {0};
+                ScreenBuffer buffer;
                 buffer.window_width   = window_width;
                 buffer.window_height  = window_height;
                 buffer.depth          = screen_bit_depth;
 
-                // 一つのアロケーションに全部叩き込む
                 size_t color_buffer_size = (window_width * window_height * sizeof(uint32));
                 size_t z_buffer_size     = (window_width * window_height * sizeof(real32));
-
 
                 buffer.visible_buffer  = (uint32 *)core_arena.alloc(color_buffer_size);
                 buffer.back_buffer     = (uint32 *)core_arena.alloc(color_buffer_size);
                 buffer.z_buffer        = (real32 *)core_arena.alloc(z_buffer_size);
 
                 Input input = {0};
-
-                Camera camera = {0};
+                Camera camera;
                 default_camera(&camera);
 
-                // MEMO: yanked this value from SDL_GetPerformanceFrequency.
-                // SDL_GetPerformanceFrequency returns 1000000000 if you can use CLOCK_MONOTONIC_RAW.
+                FontData font_data = {0};
+                if (!load_simple_font("inconsolata.ttf", &font_data, window_height)) {
+                    printf("Inconsolata.ttfの読み込みに失敗しました。\n");
+                    TRACE("STB FONT LOAD FAILED.");
+                    return 0;
+                }
+
+                Model model = {0};
+                if (file_extension_matches(argv[1], "obj")) {
+                    if (!load_simple_model(argv[1], &model)) {
+                        printf("指定されたモデルファイルの読み込みに失敗しました。\n");
+                        return 0;
+                    }
+                } else {
+                    printf("指定されたファイルがobjファイルではありません。\n");
+                    return 0;
+                }
+
+                // NOTE(fuzzy): texture.data != NULL の判定を後々行うので
+                // 0クリアしないとダメ
+                Texture texture = {0};
+                if(argc >= 3) {
+                    if (!load_simple_texture(argv[2], &texture)) {
+                        // NOTE(fuzzy): @MemoryLeak
+                        // どの道即終了するのでfree(model->... は行わない
+                        printf("テクスチャのロードに失敗しました。\n");
+                        return 0;
+                    }
+                }
+
+                // NOTE(fuzzy): SDL_GetPerformanceFrequencyから。
+                // SDL_GetPerformanceFrequencyはCLOCK_MONOTONIC_RAWを使用する際1000000000を返す
                 uint64 time_frequency = 1000000000;
-                uint64 start_time, start_cycle;
 
                 struct timespec _timespec_now;
                 clock_gettime(CLOCK_MONOTONIC_RAW, &_timespec_now);
-                start_time = (_timespec_now.tv_sec * time_frequency) + _timespec_now.tv_nsec;
-                start_cycle = __rdtsc();
 
-                uint64 time_elapsed, cycle_elapsed;
-                real64 ms_per_frame, fps;
-                Color bg = rgb_opaque(0.0, 0.2, 0.2);
+                uint64 start_time = (_timespec_now.tv_sec * time_frequency) + _timespec_now.tv_nsec;
 
-                bool32 running = 1;
+                uint64 start_cycle; // NOTE(fuzzy): while文の直前に初期化する
 
-                bool32 draw_z_buffer = 0;
+                uint64 time_elapsed  = 0;
+                uint64 cycle_elapsed = 0;
+
+                real64 ms_per_frame  = 0;
+                real64 fps           = 0;
+
+                Color fg_color = rgb_opaque(1.0, 1.0, 1.0);
+                real32 delta_time     = 0.016;
+                bool32 running        = 1;
+                bool32 draw_z_buffer  = 0;
                 bool32 draw_wireframe = 0;
-                clear_buffer(&drawing_buffer, CLEAR_COLOR_BUFFER | CLEAR_Z_BUFFER, camera.z_far);
+                clear_buffer(&buffer, CLEAR_COLOR_BUFFER | CLEAR_Z_BUFFER, camera.z_far);
 
+                start_cycle = __rdtsc();
                 while (running) {
-                    clear_buffer(&drawing_buffer, CLEAR_COLOR_BUFFER | CLEAR_Z_BUFFER, camera.z_far);
+                    PROFILE("Clear buffer before rendering") {
+                        clear_buffer(&buffer, CLEAR_COLOR_BUFFER | CLEAR_Z_BUFFER, camera.z_far);
+                    }
 
                     clock_gettime(CLOCK_MONOTONIC_RAW, &_timespec_now);
                     start_time = (_timespec_now.tv_sec * time_frequency) + _timespec_now.tv_nsec;
@@ -427,13 +477,16 @@ int main(int argc, char **argv) {
                             } break;
                         }
                     }
-                    Color c = rgb_opaque(1.0, 1.0, 1.0);
-                    if (!input.debug_menu_key) update_camera_with_input(&camera, &input, 0.016);
+                    if (!input.debug_menu_key) update_camera_with_input(&camera, &input, delta_time);
 
                     if (draw_wireframe) {
-                        draw_wire_model(&buffer, &model, &camera, &property, c);
+                        draw_wire_model(&buffer, &model, &camera, &property, fg_color);
                     } else {
-                        draw_textured_model(&buffer, &model, &camera, &property, &texture);
+                        if(texture.data && model.num_texcoords > 0) {
+                            draw_textured_model(&buffer, &model, &camera, &property, &texture);
+                        } else {
+                            draw_filled_model(&buffer, &model, &camera, &property, fg_color);
+                        }
                     }
 
                     if (draw_z_buffer) {
@@ -441,45 +494,47 @@ int main(int argc, char **argv) {
                     }
 
                     if (input.debug_menu_key) {
+                        PROFILE("Rendering Debug Menu") {
+                            imm_begin(&font_data, &input);
+                            imm_draw_top_bar(&buffer, buffer.window_width, 30);
+
+                            int32 topbar_y_size = 30;
+                            int32 current_x     = 0;
+                            int32 min_width     = 120;
+                            int32 actual_width  = 0;
+                            {
+                                char *name = (char *)"Reset Camera";
+                                if(imm_draw_text_button(&buffer, current_x, 0, min_width, topbar_y_size, name, &actual_width)) {
+                                    default_camera(&camera);
+                                }
+                                current_x += actual_width;
+                            }
+                            {
+                                char *name = (char *)"Z Buffer";
+                                if(imm_draw_text_button(&buffer, current_x, 0, min_width, topbar_y_size, name, &actual_width)) {
+                                    draw_z_buffer = !draw_z_buffer;
+                                    draw_wireframe = 0;
+                                }
+                                current_x += actual_width;
+                            }
+                            {
+                                char *name = (char *)"Wireframe";
+                                if(imm_draw_text_button(&buffer, current_x, 0, min_width, topbar_y_size, name, &actual_width)) {
+                                    draw_wireframe = !draw_wireframe;
+                                    draw_z_buffer = 0;
+                                }
+                                current_x += actual_width;
+                            }
+                            {
+                                char *name = format("FOV: %06.2f", camera.fov);
+                                int32 fixed_width = 170;
+                                imm_draw_text_slider(&buffer, current_x, 0, fixed_width, topbar_y_size, name, 0.0, 120.0, &camera.fov);
+                                current_x += fixed_width;
+                            }
+                            imm_end();
+                        }
                         draw_debug_info(&buffer, &input, &font_data, &camera, &model,
                                         ms_per_frame, fps, cycle_elapsed);
-                        imm_begin(&font_data, &input);
-                        imm_draw_top_bar(&buffer, buffer.window_width, 30);
-
-                        int32 topbar_y_size = 30;
-                        int32 current_x     = 0;
-                        int32 min_width     = 120;
-                        int32 actual_width  = 0;
-                        {
-                            char *name = (char *)"Reset Camera";
-                            if(imm_draw_text_button(&buffer, current_x, 0, min_width, topbar_y_size, name, &actual_width)) {
-                                default_camera(&camera);
-                            }
-                            current_x += actual_width;
-                        }
-                        {
-                            char *name = (char *)"Z Buffer";
-                            if(imm_draw_text_button(&buffer, current_x, 0, min_width, topbar_y_size, name, &actual_width)) {
-                                draw_z_buffer = !draw_z_buffer;
-                                draw_wireframe = 0;
-                            }
-                            current_x += actual_width;
-                        }
-                        {
-                            char *name = (char *)"Wireframe";
-                            if(imm_draw_text_button(&buffer, current_x, 0, min_width, topbar_y_size, name, &actual_width)) {
-                                draw_wireframe = !draw_wireframe;
-                                draw_z_buffer = 0;
-                            }
-                            current_x += actual_width;
-                        }
-                        {
-                            char *name = format("FOV: %06.2f", camera.fov);
-                            int32 fixed_width = 170;
-                            imm_draw_text_slider(&buffer, current_x, 0, fixed_width, topbar_y_size, name, 0.0, 120.0, &camera.fov);
-                            current_x += fixed_width;
-                        }
-                        imm_end();
                     }
                     update_xwindow_with_drawbuffer(display, my_window, context, &buffer);
                     swap_buffer(&buffer);

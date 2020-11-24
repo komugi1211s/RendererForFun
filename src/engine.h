@@ -76,17 +76,17 @@ typedef struct TempArena {
  * }
  * */
 
-#define PROFILE(name) for(int i##__LINE__ = (profile_begin(name), 0); i##__LINE__ < 1; i##__LINE__ = (profile_end(name), 1))
-#define PROFILE_FUNC          auto _profile_##__LINE__ = ProfileScope(__func__);
+#define PROFILE(name) for(int i##__LINE__ = (profile_begin((char*)name), 0); i##__LINE__ < 1; i##__LINE__ = (profile_end((char*)name), 1))
+#define PROFILE_FUNC  auto _profile_##__LINE__ = ProfileScope(__func__)
 
-void profile_begin(const char *name);
-void profile_end(const char *name);
+void profile_begin(char *name);
+void profile_end(char *name);
 
 typedef struct ProfileInfo {
-    const char  *name;
-    uint64 cycle_count;
-    uint64 cycle_elapsed;
-    bool32 is_started;
+    char   *name;
+    size_t  name_length;
+    uint64  cycle_count;
+    uint64  cycle_elapsed;
 } ProfileInfo;
 
 global_variable ProfileInfo profile_info[PROFILE_INFO_MAX_SIZE] = {0};
@@ -94,7 +94,6 @@ global_variable size_t      profile_info_count = 0;
 
 typedef struct ProfileScope {
     char *name;
-
     ProfileScope(const char *n) {
         name = (char *)n;
         profile_begin(name);
@@ -182,7 +181,7 @@ typedef struct Color {
 
 typedef struct Property {
     fVector3 position;
-    fVector3 rotation; // TODO(fuzzy): Quaternions
+    fVector3 rotation; // TODO(fuzzy): Quaternionsの実装
     fVector3 scale;
 } Property;
 
