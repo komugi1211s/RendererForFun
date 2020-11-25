@@ -247,6 +247,9 @@ void default_camera(Camera *cam) {
 }
 
 int main(int argc, char **argv) {
+
+    void *memory = platform.alloc(1000);
+
     if (argc <= 1) {
         printf("usage: executable [obj file name] [optional: texture name]\n");
         return 0;
