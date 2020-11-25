@@ -5,6 +5,38 @@
 
 /*
  * =========================================
+ * Platform Stuff.
+ * =========================================
+ * */
+
+typedef struct OpenedFile {
+    bool32 opened;
+    uint8 *file_content;
+    size_t size;
+} OpenedFile;
+
+typedef void *(*AllocateMemoryFunc)(size_t);
+typedef void  (*DeallocateMemoryFunc)(void *);
+typedef OpenedFile (*OpenAndReadEntireFileFunc)(char *);
+
+void      *ALLOCATE_STUB(size_t F)  { NOT_IMPLEMENTED; return 0;   }
+void       DEALLOCATE_STUB(void *F) { NOT_IMPLEMENTED; return;     }
+OpenedFile OPEN_FILE_STUB(char *F)  { NOT_IMPLEMENTED; return {0}; }
+
+typedef struct Platform {
+    AllocateMemoryFunc        alloc;
+    DeallocateMemoryFunc      dealloc;
+    OpenAndReadEntireFileFunc open_and_read_file;
+} Platform;
+
+global_variable Platform platform = {
+    .alloc              = ALLOCATE_STUB,
+    .dealloc            = DEALLOCATE_STUB,
+    .open_and_read_file = OPEN_FILE_STUB,
+};
+
+/*
+ * =========================================
  * Memory stuff.
  * =========================================
  * */
