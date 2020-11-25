@@ -7,6 +7,7 @@
 #include <windows.h>
 #include <windowsx.h>
 
+
 #define STB_TRUETYPE_IMPLEMENTATION
 #define STB_IMAGE_IMPLEMENTATION
 #define STBTT_STATIC
@@ -328,7 +329,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
     int32 window_height = 900;
     if (__argc <= 1) {
         MessageBox(NULL,
-                   L"コマンドラインから "main.exe [OBJファイル名] [テクスチャ名(optional)] のように起動して下さい。",
+                   "コマンドラインから main.exe [OBJファイル名] [テクスチャ名(optional)] のように起動して下さい。",
                    NULL,
                    MB_OK);
         return 0;
@@ -360,7 +361,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             bitmap_info.bmiHeader.biBitCount = 32;
             bitmap_info.bmiHeader.biCompression = BI_RGB;
 
-            size_t core_memory_size = MEBAGYTES(128);
+            size_t core_memory_size = MEGABYTES(128);
             void *memory = VirtualAlloc(0, core_memory_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
             if (!memory) {
                 MessageBox(window, "128MBのメモリの割り当てに失敗しました。", NULL, MB_OK);
@@ -406,17 +407,24 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             }
 
             Model model = {0};
-            if (!load_simple_model("teapot.obj", &model)) {
+            if (file_extension_matches(__argv[1], "obj")) {
+                if (!load_simple_model(__argv[1], &model)) {
+                    MessageBox(window, "指定されたモデルがロードできませんでした。", NULL, MB_OK);
+                    return 0;
+                }
+            } else {
                 MessageBox(window, "指定されたモデルがロードできませんでした。", NULL, MB_OK);
                 return 0;
             }
 
             Texture texture = {0};
-            if (!load_simple_texture("african_head.tga", &texture)) {
-                // NOTE(fuzzy): @MemoryLeak
-                // どの道即終了するのでfree(model->... は行わない
-                MessageBox(window, "指定されたテクスチャがロードできませんでした。", NULL, MB_OK);
-                return 0;
+            if(__argc >= 3) {
+                if (!load_simple_texture(__argv[2], &texture)) {
+                    // NOTE(fuzzy): @MemoryLeak
+                    // どの道即終了するのでfree(model->... は行わない
+                    MessageBox(window, "指定されたテクスチャがロードできませんでした。", NULL, MB_OK);
+                    return 0;
+                }
             }
 
             MSG message;
@@ -457,8 +465,11 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
                 if (wireframe_on) {
                     draw_wire_model(&drawing_buffer, &model, &camera, &property, fg_color);
                 } else {
-                    draw_filled_model(&drawing_buffer, &model, &camera, &property, fg_color);
-                    // draw_textured_model(&drawing_buffer, &model, &camera, &property, &texture);
+                    if(texture.data && model.num_texcoords > 0) {
+                        draw_textured_model(&drawing_buffer, &model, &camera, &property, &texture);
+                    } else {
+                        draw_filled_model(&drawing_buffer, &model, &camera, &property, fg_color);
+                    }
                 }
 
                 if (draw_z_buffer) {
@@ -529,7 +540,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
                 start_cycle = end_cycle;
             }
 
-            // stbi_image_free(texture.data);
+            stbi_image_free(texture.data);
             VirtualFree(model.vertices,       0, MEM_RELEASE);
             VirtualFree(model.texcoords,      0, MEM_RELEASE);
             VirtualFree(model.normals,        0, MEM_RELEASE);

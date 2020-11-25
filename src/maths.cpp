@@ -231,7 +231,7 @@ fmul_fv4_fmat4x4(fVector4 A, fMat4x4 B) {
 }
 
 internal inline real32
-fdeterminant_triangle_fv3(fVector3 &a, fVector3 &b, fVector3 &c) {
+fdeterminant_triangle_fv3(fVector3 a, fVector3 b, fVector3 c) {
     return (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
 }
 

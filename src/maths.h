@@ -162,6 +162,6 @@ internal inline iVector3 isub_iv3(iVector3 A, iVector3 B);
 internal inline fMat4x4  fmul_fmat4x4(fMat4x4 A, fMat4x4 B);
 internal inline fVector4 fmul_fmat4x4_fv4(fMat4x4 A, fVector4 B);
 
-internal inline real32   fdeterminant_triangle_fv3(fVector3 &a, fVector3 &b, fVector3 &c);
+internal inline real32   fdeterminant_triangle_fv3(fVector3 a, fVector3 b, fVector3 c);
 
 #endif // _K_MATH_H

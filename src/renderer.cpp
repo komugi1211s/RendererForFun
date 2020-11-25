@@ -119,6 +119,7 @@ draw_bounding_box(ScreenBuffer *buffer, BoundingBoxi2 box, Color color) {
 // ryg先生の説明 https://fgiesen.wordpress.com/2013/02/06/the-barycentric-conspirac/
 
 void draw_filled_triangle(ScreenBuffer *buffer, fVector3 vertices[3], fVector3 light_intensity, Color color) {
+    PROFILE_FUNC;
     uint32 *buf = buffer->back_buffer;
     BoundingBoxf3 bd_box = BB_fV3(vertices[0], vertices[1], vertices[2]);
     real32 det_t = fdeterminant_triangle_fv3(vertices[0], vertices[1], vertices[2]);
@@ -133,9 +134,11 @@ void draw_filled_triangle(ScreenBuffer *buffer, fVector3 vertices[3], fVector3 l
         real32 weight1, weight2, weight3;
 
         for(int32 y = y_min; y < y_max; ++y) {
-            P.y = y;
+            P.y = static_cast<real32>(y);
             for(int32 x = x_min; x < x_max; ++x) {
-                P.x = x;
+                P.x = static_cast<real32>(x);
+                int32 position = (y * buffer->window_width) + x;
+
                 weight1 = fdeterminant_triangle_fv3(vertices[1], vertices[2], P) / det_t;
                 weight2 = fdeterminant_triangle_fv3(vertices[2], vertices[0], P) / det_t;
                 weight3 = fdeterminant_triangle_fv3(vertices[0], vertices[1], P) / det_t;
@@ -146,23 +149,18 @@ void draw_filled_triangle(ScreenBuffer *buffer, fVector3 vertices[3], fVector3 l
                                + (vertices[1].z * weight2)
                                + (vertices[2].z * weight3);
 
+                if (buffer->z_buffer[position] <= z_value) continue;
+
                 real32 light = (light_intensity.x * weight1)
                              + (light_intensity.y * weight2)
                              + (light_intensity.z * weight3);
-
-                int32 position = (y * buffer->window_width) + x;
 
                 uint32 r = static_cast<uint32>(FP_CLAMP((color.r * light) * 255, 0, 255));
                 uint32 g = static_cast<uint32>(FP_CLAMP((color.g * light) * 255, 0, 255));
                 uint32 b = static_cast<uint32>(FP_CLAMP((color.b * light) * 255, 0, 255));
 
-                if (position > (buffer->window_width * buffer->window_height)) continue;
-                if (position < 0) continue;
-
-                if (buffer->z_buffer[position] > z_value) {
-                    buffer->z_buffer[position] = z_value;
-                    buf[position] = (uint32)(r << 16 | g << 8 | b);
-                }
+                buffer->z_buffer[position] = z_value;
+                buf[position] = (uint32)(r << 16 | g << 8 | b);
             }
         }
     }
@@ -277,7 +275,7 @@ void draw_filled_rectangle(ScreenBuffer *buffer, int32 x0, int32 y0, int32 x1, i
 }
 
 void draw_filled_model(ScreenBuffer *buffer, Model *model, Camera *camera, Property *property, Color color) {
-    ProfileScope profile_scope(__func__);
+    PROFILE_FUNC;
     fVector3 AB, AC;
     fVector3 surface_normal;
     real32 culling_result;
@@ -319,18 +317,18 @@ void draw_filled_model(ScreenBuffer *buffer, Model *model, Camera *camera, Prope
             // Back-face Culling
             // 既に頂点はView Spaceにある為、-V0.N < 0 を計算する
             surface_normal = fnormalize_fv3(fcross_fv3(AC, AB));
-            culling_result = -fdot_fv3(fv4_vertices[0].xyz, surface_normal);
+            culling_result = -fdot_fv3(fnormalize_fv3(fv4_vertices[0].xyz), surface_normal);
             if(culling_result < 0) continue;
 
             // TODO(fuzzy): Fullbright
             if (face.has_normals) {
-                light.x = FP_CLAMP(fdot_fv3(fv4_vertices[0].xyz, face.normals[0]), 0.0, 1.0);
-                light.y = FP_CLAMP(fdot_fv3(fv4_vertices[1].xyz, face.normals[1]), 0.0, 1.0);
-                light.z = FP_CLAMP(fdot_fv3(fv4_vertices[2].xyz, face.normals[2]), 0.0, 1.0);
+                light.x = FP_CLAMP(fdot_fv3(fnormalize_fv3(fv4_vertices[0].xyz), face.normals[0]), 0.0, 1.0);
+                light.y = FP_CLAMP(fdot_fv3(fnormalize_fv3(fv4_vertices[1].xyz), face.normals[1]), 0.0, 1.0);
+                light.z = FP_CLAMP(fdot_fv3(fnormalize_fv3(fv4_vertices[2].xyz), face.normals[2]), 0.0, 1.0);
             } else {
-                light.x = culling_result;
-                light.y = culling_result;
-                light.z = culling_result;
+                light.x = -fdot_fv3(fnormalize_fv3(fv4_vertices[0].xyz), surface_normal);
+                light.y = -fdot_fv3(fnormalize_fv3(fv4_vertices[1].xyz), surface_normal);
+                light.z = -fdot_fv3(fnormalize_fv3(fv4_vertices[2].xyz), surface_normal);
             }
 
             for (int v = 0; v < 3; ++v) {
@@ -387,18 +385,18 @@ void draw_textured_model(ScreenBuffer *buffer, Model *model, Camera *camera, Pro
             // Back-face Culling
             // 既に頂点はView Spaceにある為、-V0.N < 0 を計算する
             surface_normal = fnormalize_fv3(fcross_fv3(AC, AB));
-            culling_result = -fdot_fv3(fv4_vertices[0].xyz, surface_normal);
+            culling_result = -fdot_fv3(fnormalize_fv3(fv4_vertices[0].xyz), surface_normal);
             if(culling_result < 0) continue;
 
             // TODO(fuzzy): Fullbright
             if (face.has_normals) {
-                light.x = FP_CLAMP(fdot_fv3(fv4_vertices[0].xyz, face.normals[0]), 0.0, 1.0);
-                light.y = FP_CLAMP(fdot_fv3(fv4_vertices[1].xyz, face.normals[1]), 0.0, 1.0);
-                light.z = FP_CLAMP(fdot_fv3(fv4_vertices[2].xyz, face.normals[2]), 0.0, 1.0);
+                light.x = FP_CLAMP(fdot_fv3(fnormalize_fv3(fv4_vertices[0].xyz), face.normals[0]), 0.0, 1.0);
+                light.y = FP_CLAMP(fdot_fv3(fnormalize_fv3(fv4_vertices[1].xyz), face.normals[1]), 0.0, 1.0);
+                light.z = FP_CLAMP(fdot_fv3(fnormalize_fv3(fv4_vertices[2].xyz), face.normals[2]), 0.0, 1.0);
             } else {
-                light.x = culling_result;
-                light.y = culling_result;
-                light.z = culling_result;
+                light.x = -fdot_fv3(fnormalize_fv3(fv4_vertices[0].xyz), surface_normal);
+                light.y = -fdot_fv3(fnormalize_fv3(fv4_vertices[1].xyz), surface_normal);
+                light.z = -fdot_fv3(fnormalize_fv3(fv4_vertices[2].xyz), surface_normal);
             }
 
             for (int v = 0; v < 3; ++v) {
