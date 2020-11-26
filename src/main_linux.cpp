@@ -24,6 +24,17 @@
 global_variable Atom wm_protocols;
 global_variable Atom wm_delete_window;
 
+// TODO(fuzzy): 今後asset.hに移す
+inline bool32
+file_extension_matches(char *file_name, const char *expected_extension) {
+    char *extension = strrchr(file_name, '.');
+    if (extension && extension != file_name) {
+        return (strcmp(extension+1, expected_extension) == 0);
+    } else {
+        return 0;
+    }
+}
+
 void update_camera_with_input(Camera *camera, Input *input, real32 dt) {
     PROFILE_FUNC;
     if (!(input->forward && input->backward)) {
@@ -103,15 +114,6 @@ bool32 load_simple_font(const char *font_name, FontData *font_data, int32 window
         stbtt_GetFontVMetrics(&font_data->font_info, &font_data->ascent, &font_data->descent, &font_data->line_gap);
         font_data->base_line = font_data->ascent * font_data->char_scale;
         return 1;
-    } else {
-        return 0;
-    }
-}
-
-bool32 file_extension_matches(char *file_name, const char *expect_extension) {
-    char *extension = strrchr(file_name, '.');
-    if (extension && extension != file_name) {
-        return (strcmp(extension+1, expect_extension) == 0);
     } else {
         return 0;
     }
@@ -246,10 +248,67 @@ void default_camera(Camera *cam) {
     cam->pitch        = 0.0f;
 }
 
+
+void *platform_allocate_memory(size_t memory_size) {
+    void *memory = malloc(memory_size);
+
+    if (!memory) {
+        TRACE("MEMORY ALLOCATION FAILED: SIZE REQUESTED %zu", memory_size);
+        return NULL;
+    }
+
+    return memory;
+}
+
+void platform_free_memory(void *ptr) {
+    free(ptr);
+}
+
+FileObject
+platform_open_and_read_entire_file(char *file_name) {
+    FileObject result = {0};
+
+    FILE *fp = fopen(file_name, "rb");
+    if (!fp) return result;
+
+    /*
+     *
+     * NOTE(fuzzy):
+     * !fseek でもいいが、 == 0 としたほうが
+     * 「意図した値である事をチェックしている」感がでるのでこのまま
+     *
+     * 早期リターンを使用してもいいが、いちいちfclose(fp);をかくのも冗長なので
+     * ifを連ねることにする
+     *
+     * */
+    if(fseek(fp, 0, SEEK_END) == 0) {
+        size_t file_length = ftell(fp);
+
+        if (file_length > 0 && (fseek(fp, 0, SEEK_SET) == 0)) {
+            uint8 *memory = (uint8 *)platform_allocate_memory(file_length + 1);
+
+            if (memory) {
+                size_t actually_read = fread(memory, file_length, 1, fp);
+                if (actually_read == file_length) {
+                    memory[file_length] = '\0';
+                    result.opened  = 1;
+                    result.content = memory;
+                    result.size    = file_length;
+
+                    fclose(fp);
+                    return result;
+                } else {
+                    platform_free_memory(memory);
+                }
+            }
+        }
+    }
+
+    fclose(fp);
+    return result;
+}
+
 int main(int argc, char **argv) {
-
-    void *memory = platform.alloc(1000);
-
     if (argc <= 1) {
         printf("usage: executable [obj file name] [optional: texture name]\n");
         return 0;
@@ -322,9 +381,15 @@ int main(int argc, char **argv) {
                 property.rotation = fVec3(0.0, 0.0, 0.0);
                 property.scale    = fVec3(1.0, 1.0, 1.0);
 
+
+                Platform platform_api;
+                platform_api.alloc              = platform_allocate_memory;
+                platform_api.dealloc            = platform_free_memory;
+                platform_api.open_and_read_file = platform_open_and_read_entire_file;
+
                 ImmStyle default_style;
-                default_style.bg_color = rgba(0.1, 0.1, 0.1, 0.5);
-                default_style.hot_color = rgba(0.5, 0.0, 0.0, 0.5);
+                default_style.bg_color     = rgba(0.1, 0.1, 0.1, 0.5);
+                default_style.hot_color    = rgba(0.5, 0.0, 0.0, 0.5);
                 default_style.active_color = rgba(0.0, 0.5, 0.0, 0.5);
                 imm_set_style(default_style);
 
@@ -341,6 +406,7 @@ int main(int argc, char **argv) {
                 buffer.z_buffer        = (real32 *)core_arena.alloc(z_buffer_size);
 
                 Input input = {0};
+
                 Camera camera;
                 default_camera(&camera);
 

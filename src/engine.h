@@ -6,22 +6,42 @@
 /*
  * =========================================
  * Platform Stuff.
+ *
+ * NOTE(fuzzy): 重要。
+ * レンダラは内部で下記３つの関数を必ず使うので
+ * プログラム開始時に必ずplatform用の関数をセットアップする事。
+ *
+ * Platform.alloc   :: AllocateMemoryFunc
+ * 引数と戻り値はmallocと同じ。指定された量のメモリを確保し、失敗したらNULLを返す。
+ *
+ * Platform.dealloc :: DeallocateMemoryFunc
+ * freeと同じ。指定されたメモリを解放する。
+ * 指定されたメモリがAllocateMemoryFuncで確保されてなければ未定義。
+ *
+ * Platform.open_and_read_file :: OpenAndReadEntireFileFunc
+ * ファイル名が指定された際にそのファイルを読み込む。モードは読み込みバイナリで固定、テキストでは読めない。
+ * ファイルが読めなかった場合はopenedが0になる。
+ * 内部でAllocateMemoryFuncに指定された関数でメモリを確保し、DeallocateMemoryFuncでフリー出来る必要がある。
+ *
+ * NOTE(fuzzy):
+ * やろうと思えばマクロでもイケるかなと思ったが、
+ * マクロでやるならデフォルトの挙動を与えないといけないのでダメ（設定せずとも動く必要がある）。
  * =========================================
  * */
 
-typedef struct OpenedFile {
+typedef struct FileObject {
     bool32 opened;
-    uint8 *file_content;
+    uint8  *content;
     size_t size;
-} OpenedFile;
+} FileObject;
 
-typedef void *(*AllocateMemoryFunc)(size_t);
-typedef void  (*DeallocateMemoryFunc)(void *);
-typedef OpenedFile (*OpenAndReadEntireFileFunc)(char *);
+typedef void *(*AllocateMemoryFunc)(size_t memory_size);
+typedef void  (*DeallocateMemoryFunc)(void *ptr);
+typedef FileObject (*OpenAndReadEntireFileFunc)(char *filename);
 
 void      *ALLOCATE_STUB(size_t F)  { NOT_IMPLEMENTED; return 0;   }
 void       DEALLOCATE_STUB(void *F) { NOT_IMPLEMENTED; return;     }
-OpenedFile OPEN_FILE_STUB(char *F)  { NOT_IMPLEMENTED; return {0}; }
+FileObject OPEN_FILE_STUB(char *F)  { NOT_IMPLEMENTED; return {0}; }
 
 typedef struct Platform {
     AllocateMemoryFunc        alloc;
@@ -29,15 +49,23 @@ typedef struct Platform {
     OpenAndReadEntireFileFunc open_and_read_file;
 } Platform;
 
-global_variable Platform platform = {
-    .alloc              = ALLOCATE_STUB,
-    .dealloc            = DEALLOCATE_STUB,
-    .open_and_read_file = OPEN_FILE_STUB,
-};
-
 /*
  * =========================================
  * Memory stuff.
+ *
+ * 内部でヒープメモリ確保関数を呼ばないので、自分で確保したバッキングバッファを与えるように。
+ *
+ * Arena
+ * リニアなアリーナ。内部で16アラインを行うので確保したメモリ容量よりもデータが収まらない可能性がある。
+ * 仕様として、こいつから確保したメモリをアリーナに返す事は出来ない（Free不可）。
+ * ライフタイムが決まっている物をまとめて放り込むのに使う。
+ *
+ * TemporaryMemory
+ * 親となるアリーナから派生するアリーナ。さくっと作ってさくっと解放するのに使う。
+ * Arenaがフリーを行えない代わりに、TemporaryMemoryを作ってそのメモリ領域で作業をするのに便利。
+ * 複数作成した場合は、最も新しいものから順に解放していく必要がある。
+ *
+ * Pool  - 未実装。普通に使うので実装予定。 TODO(fuzzy): メモリプールの実装。
  * =========================================
  * */
 
@@ -54,28 +82,28 @@ uptr align_pointer_forward(uptr unaligned) {
     return aligned;
 }
 
-typedef struct TempArena TempArena;
+typedef struct TemporaryMemory TemporaryMemory;
 
 typedef struct Arena {
     size_t capacity;
     size_t used;
     uint8  *data;
-    size_t original_capacity;
-    bool32 temparena_is_present;
+
+    int32  temp_count;
 
     Arena(uint8 *storage_ptr, size_t storage_capacity) {
-        original_capacity = storage_capacity;
         capacity          = storage_capacity;
         data = storage_ptr;
         used = 0;
-        temparena_is_present = 0;
+        temp_count = 0;
     }
 
     uint8    *alloc(size_t allocation_size);
-    TempArena temparena(size_t temparena_size);
+    TemporaryMemory begin_temporary(size_t temparena_size);
+    void end_temporary(TemporaryMemory *child);
 } Arena;
 
-typedef struct TempArena {
+typedef struct TemporaryMemory {
     size_t  capacity;
     size_t  used;
     uint8   *data;
@@ -83,11 +111,27 @@ typedef struct TempArena {
 
     uint8 *alloc(size_t allocation_size);
     void close();
-} TempArena;
+} TemporaryMemory;
 
 /*
  * =========================================
  * Profiler Stuff.
+ *
+ * PROFILE(name)
+ * for文を悪用したプロファイラマクロ。PROFILE(name) { ... } のようにして使える。
+ *
+ * PROFILE_FUNC
+ * デストラクタを悪用したプロファイラマクロ。
+ * 関数のトップレベルに放り込んで放置しておくだけで、スコープから抜けた際にプロファイルを行う。
+ *
+ * profile_begin(name)
+ * profile_end(name)
+ * 普通のプロファイル関数。同一の名前を指定すると、BeginからEndの間のサイクル数を計測する。
+ * mallocとfree、fopenとfcloseのように対になってないとダメ。
+ *
+ * TODO(fuzzy):
+ * プロファイラ自体が結構サイクルを使うので（本末転倒）そこを改善するように。
+ *
  * =========================================
  * */
 
@@ -138,6 +182,8 @@ typedef struct ProfileScope {
 /*
  * =========================================
  * General Engine Stuff.
+ *
+ * 特筆することなし。
  * =========================================
  * */
 
@@ -162,10 +208,10 @@ typedef struct FontData {
     real32         char_scale;
 } FontData;
 
+// TODO(fuzzy):
+// Float as color is a bad idea... seriously.
 typedef struct Color {
     real32 r, g, b, a;
-
-    uint32 pack();
 
     uint32 to_uint32_argb() {
         uint8 u8r, u8g, u8b, u8a;
@@ -236,5 +282,4 @@ Color rgb_opaque(real32 r, real32 g, real32 b) {
 
     return result;
 }
-
 #endif

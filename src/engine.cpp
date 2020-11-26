@@ -12,6 +12,8 @@ uint8 *Arena::alloc(size_t allocation_size) {
     uptr pointer = (uptr)(this->data + this->used);
     uptr aligned_pointer = align_pointer_forward(pointer);
 
+    // TODO(fuzzy): @Bug ちょっと違う？
+    // 正常にアラインはされてはいるが、前回のアロケーションと今行っているアロケーションの合間に隙間が開く
     if (aligned_pointer > pointer) {
         allocation_size += (size_t)(aligned_pointer - pointer);
     }
@@ -24,29 +26,28 @@ uint8 *Arena::alloc(size_t allocation_size) {
     return heap_memory;
 }
 
-TempArena Arena::temparena(size_t temparena_size) {
-    ASSERT(!this->temparena_is_present);
-    ASSERT((this->used + temparena_size) < this->capacity);
-    uptr pointer = (uptr)((this->data + this->capacity) - temparena_size);
+TemporaryMemory Arena::begin_temporary(size_t temparena_size) {
+    uptr pointer = (uptr)(this->data + this->used);
+    uptr aligned_pointer = align_pointer_forward(pointer);
 
-    uint8 modulo = (pointer & (MEMORY_ALIGNMENT - 1));
-    if (modulo > 0) {
-        pointer -= modulo;
-        temparena_size += modulo;
+    if (aligned_pointer > pointer) {
+        temparena_size += (size_t)(aligned_pointer - pointer);
     }
 
-    TempArena temparena;
+    ASSERT((this->used + temparena_size) < this->capacity);
+
+
+    TemporaryMemory temparena;
     temparena.capacity = temparena_size;
-    temparena.used = 0;
-    temparena.data = (uint8 *)pointer;
+    temparena.data     = (uint8 *)pointer;
+    temparena.used     = 0;
     temparena.derived_from = this;
 
-    this->capacity -= temparena_size;
-    this->temparena_is_present = 1;
+    this->temp_count += 1;
     return temparena;
 }
 
-uint8 *TempArena::alloc(size_t allocation_size) {
+uint8 *TemporaryMemory::alloc(size_t allocation_size) {
     uptr pointer = (uptr)(this->data + this->used);
     uptr aligned_pointer = align_pointer_forward(pointer);
 
@@ -62,12 +63,12 @@ uint8 *TempArena::alloc(size_t allocation_size) {
     return heap_memory;
 }
 
-void TempArena::close() {
-    this->derived_from->capacity += this->capacity;
-    this->derived_from->temparena_is_present = 0;
-    this->data = NULL;
-    this->used = 0;
-    this->capacity = 0;
+void Arena::end_temporary(TemporaryMemory *child) {
+    ASSERT(this->temp_count > 0);
+    ASSERT(this == child->derived_from);
+
+    this->used       -= child->capacity;
+    this->temp_count -= 1;
 }
 
 /*
