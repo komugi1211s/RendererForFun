@@ -303,11 +303,14 @@ bool32 load_model(Engine *engine, char *filename) {
         ModelInfo model_info = do_obj_element_counting(file_object.content, file_object.size);
 
         // 専用のアロケーターを準備
+        // NOTE(fuzzy): メモリアラインメントの考慮で少し余分にとる
         size_t vertex_buffer_size   = (model_info.vertex_count   * sizeof(fVector3));
         size_t texcoord_buffer_size = (model_info.texcoord_count * sizeof(fVector3));
         size_t normal_buffer_size   = (model_info.normal_count   * sizeof(fVector3));
         size_t faceid_buffer_size   = (model_info.face_count     * sizeof(FaceId));
-        uint8 *model_buffer = (uint8 *)engine->platform.allocate_memory(vertex_buffer_size + texcoord_buffer_size + normal_buffer_size + faceid_buffer_size);
+
+        size_t padding_for_alignment = (16 * 4);
+        uint8 *model_buffer = (uint8 *)engine->platform.allocate_memory(vertex_buffer_size + texcoord_buffer_size + normal_buffer_size + faceid_buffer_size + padding_for_alignment);
         if (!model_buffer) {
             engine->platform.deallocate_memory(file_object.content);
             TRACE("failed to allocate %zu memory for models.", vertex_buffer_size + texcoord_buffer_size + normal_buffer_size + faceid_buffer_size);
@@ -315,15 +318,14 @@ bool32 load_model(Engine *engine, char *filename) {
         }
 
         Arena model_memory;
-        model_memory.initialize(model_buffer, vertex_buffer_size + texcoord_buffer_size + normal_buffer_size + faceid_buffer_size);
+        model_memory.initialize(model_buffer, vertex_buffer_size + texcoord_buffer_size + normal_buffer_size + faceid_buffer_size + padding_for_alignment);
 
         Model model = {0};
-
-        model.memory_arena = model_memory;
         model.vertices.initialize((fVector3*)model_memory.alloc(vertex_buffer_size), model_info.vertex_count);
         model.texcoords.initialize((fVector3*)model_memory.alloc(texcoord_buffer_size), model_info.texcoord_count);
         model.normals.initialize((fVector3*)model_memory.alloc(normal_buffer_size), model_info.normal_count);
         model.face_ids.initialize((FaceId*)model_memory.alloc(faceid_buffer_size), model_info.face_count);
+        model.memory_arena = model_memory;
 
         if(!parse_obj_file(&model, file_object.content, file_object.size)) {
             engine->platform.deallocate_memory(model_memory.data);
@@ -345,5 +347,39 @@ bool32 load_model(Engine *engine, char *filename) {
     return 0;
 }
 
+
+bool32 load_texture(Engine *engine, char *file_name) {
+    Texture texture;
+    texture.data = stbi_load(file_name,
+                             &texture.width,
+                             &texture.height,
+                             &texture.channels, 0);
+
+    if(texture.channels != 3) {
+        stbi_image_free(texture.data);
+        return 0;
+    }
+
+    if(!engine->asset_table.textures.push(texture)) {
+        stbi_image_free(texture.data);
+        return 0;
+    }
+
+    return 1;
+}
+
+void free_models(Engine *engine) {
+    for (size_t i = 0; i < engine->asset_table.models.count; ++i) {
+        Model *model = &engine->asset_table.models.data[i];
+        engine->platform.deallocate_memory(model->memory_arena.data);
+    }
+}
+
+void free_textures(Engine *engine) {
+    for (size_t i = 0; i < engine->asset_table.textures.count; ++i) {
+        Texture *tex = &engine->asset_table.textures.data[i];
+        stbi_image_free(tex->data);
+    }
+}
 
 #endif // _K_ASSET_CPP

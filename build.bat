@@ -3,7 +3,7 @@
 
 IF NOT EXIST ./dist mkdir dist
 set INCLUDES=
-set COMPOPTION=/O2 /MD /Fo"dist/main_win32.obj" /Fd"dist/vc140.pdb" /source-charset:utf-8
+set COMPOPTION=/Zi /MD /Fo"dist/main_win32.obj" /Fd"dist/vc140.pdb" /source-charset:utf-8
 
 set LIBPATH=
 set LINKS=user32.lib shell32.lib gdi32.lib

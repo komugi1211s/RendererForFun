@@ -57,7 +57,7 @@ typedef struct Texture {
 } Texture;
 
 typedef struct AssetTable {
-    FixedArray<Model> models;
+    FixedArray<Model>   models;
     FixedArray<Texture> textures;
 } AssetTable;
 
@@ -76,5 +76,10 @@ ModelInfo do_obj_element_counting(char *obj_file_buffer, size_t file_length);
 bool32 parse_obj_file(Model *result, char *obj_file_buffer, size_t file_length);
 bool32 load_model(Engine *engine, char *filename);
 bool32 load_texture(Engine *engine, char *filename);
+
+// TODO(fuzzy): 
+// free A MODEL / A TEXTURE function, not this kind of bulk stuff.
+void free_models(Engine *engine);
+void free_textures(Engine *engine);
 
 #endif // _K_ASSET_H

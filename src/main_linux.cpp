@@ -312,16 +312,10 @@ int main(int argc, char **argv) {
                 // =======================================
                 // レンダリングに必要な物全般をセットアップ
                 // =======================================
-                // TODO(fuzzy): 未だ使っていない
-                Property property;
-                property.position = fVec3(0.0, 0.0, 0.0);
-                property.rotation = fVec3(0.0, 0.0, 0.0);
-                property.scale    = fVec3(1.0, 1.0, 1.0);
-
                 Engine engine;
 
                 size_t core_memory_size = MEGABYTES(128);
-                void *memory = malloc(core_memory_size);
+                void *memory = platform_allocate_memory(core_memory_size);
                 if (!memory) {
                     printf("128MBのメモリの割り当てに失敗しました。\n");
                     return 0;
@@ -336,6 +330,13 @@ int main(int argc, char **argv) {
                 engine.platform.allocate_memory    = platform_allocate_memory;
                 engine.platform.deallocate_memory  = platform_free_memory;
                 engine.platform.open_and_read_file = platform_open_and_read_entire_file;
+
+                // TODO(fuzzy): 未だ使っていない
+                Property property;
+                property.position = fVec3(0.0, 0.0, 0.0);
+                property.rotation = fVec3(0.0, 0.0, 0.0);
+                property.scale    = fVec3(1.0, 1.0, 1.0);
+
 
                 ImmStyle default_style;
                 default_style.bg_color     = rgba(0.1, 0.1, 0.1, 0.5);
@@ -368,7 +369,7 @@ int main(int argc, char **argv) {
                 }
 
                 if (file_extension_matches(argv[1], "obj")) {
-                    if(!load_model(&engine, argv[0])) {
+                    if(!load_model(&engine, argv[1])) {
                         printf("指定されたモデルファイルの読み込みに失敗しました。\n");
                         return 0;
                     }
@@ -576,7 +577,9 @@ int main(int argc, char **argv) {
                     start_cycle = end_cycle;
                 }
 
-                free(engine.core_memory.data);
+                free_models(&engine);
+                free_textures(&engine);
+                platform_free_memory(engine.core_memory.data);
                 XCloseDisplay(display);
             } else {
                 TRACE("Failed to Open Window.");

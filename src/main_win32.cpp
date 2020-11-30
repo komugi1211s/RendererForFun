@@ -16,8 +16,9 @@
 #include "3rdparty.h"
 
 #include "maths.cpp"
+#include "memory.cpp"
 #include "engine.cpp"
-#include "model.cpp"
+#include "asset.cpp"
 #include "renderer.cpp"
 #include "imm.cpp"
 
@@ -115,97 +116,6 @@ LRESULT CALLBACK my_window_proc(HWND handle, uint32 message, WPARAM wparam, LPAR
         return DefWindowProc(handle, message, wparam, lparam);
     }
     return result;
-}
-
-bool32 load_simple_texture(char *tex_name, Texture *texture) {
-    texture->data = stbi_load(tex_name,
-                              &texture->width,
-                              &texture->height,
-                              &texture->channels, 0);
-
-    if (texture->channels != 3) {
-        stbi_image_free(texture->data);
-        return 0;
-    }
-
-    return !!(texture->data);
-}
-
-bool32 load_simple_model(char *model_name, Model *model) {
-    FILE *file;
-    if ((file = fopen(model_name, "rb"))) {
-        fseek(file, 0, SEEK_END);
-        size_t file_length = ftell(file);
-        fseek(file, 0, SEEK_SET);
-        // TODO(fuzzy): @MemoryLeak
-        // 現状はモデルのアンロード・ロードを実行時にGUIから行う機能を持っていない為、
-        // Modelに渡されるデータは全部解放されずにずっと残ったままになる。
-        //
-        // プロセス終了時にプロセスに割り当てられたメモリは全て掃除されるので現状は未だ問題はないが、メモリリークであることに変わりはない。
-        // 新しいモデルをロードする機能の実装を行う際は**必ず**アロケーターを先に書くか、
-        // RAIIなどでデータの破棄時に自動で解放するようにする事。
-
-        char *buffer = (char *)VirtualAlloc(0, file_length, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-        model->vertices =
-            (fVector3 *)VirtualAlloc(0, file_length * sizeof(fVector3), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-
-        model->normals =
-            (fVector3 *)VirtualAlloc(0, file_length * sizeof(fVector3), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-
-        model->texcoords =
-            (fVector3 *)VirtualAlloc(0, file_length * sizeof(fVector3), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-
-        model->face_indices =
-            (FaceId *)VirtualAlloc(0, file_length * sizeof(FaceId), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-
-        ASSERT(buffer || model->vertices || model->normals || model->face_indices || model->texcoords);
-        fread(buffer, 1, file_length, file);
-        fclose(file);
-
-        bool32 parsed = parse_obj(buffer, file_length, model);
-        VirtualFree(buffer, 0, MEM_RELEASE);
-
-        if(!parsed) {
-            VirtualFree(model->vertices,     0, MEM_RELEASE);
-            VirtualFree(model->texcoords,    0, MEM_RELEASE);
-            VirtualFree(model->face_indices, 0, MEM_RELEASE);
-
-            TRACE("Failed to Load model.");
-            return 0;
-        }
-
-    } else {
-        TRACE("Failed to Open the model file.");
-        return 0;
-    }
-
-    return 1;
-}
-
-global_variable uint8 ttf_buffer[1 << 25];
-bool32 load_simple_font(const char *font_name, FontData *font_data, int32 window_height) {
-    FILE *font = NULL;
-    if ((font = fopen(font_name, "rb"))) {
-        fread(ttf_buffer, 1, 1 << 25, font);
-        fclose(font);
-
-        stbtt_InitFont(&font_data->font_info, ttf_buffer, 0);
-        font_data->char_scale = stbtt_ScaleForPixelHeight(&font_data->font_info, window_height / 40);
-        stbtt_GetFontVMetrics(&font_data->font_info, &font_data->ascent, &font_data->descent, &font_data->line_gap);
-        font_data->base_line = font_data->ascent * font_data->char_scale;
-        return 1;
-    } else {
-        return 0;
-    }
-}
-
-bool32 file_extension_matches(char *file_name, const char *expect_extension) {
-    char *extension = strrchr(file_name, '.');
-    if (extension && extension != file_name) {
-        return (strcmp(extension+1, expect_extension) == 0);
-    } else {
-        return 0;
-    }
 }
 
 #define EACH_STRING_SIZE 1024
@@ -323,6 +233,94 @@ void default_camera(Camera *cam) {
     cam->pitch        = 0.0f;
 }
 
+bool32 load_simple_texture(char *tex_name, Texture *texture) {
+    texture->data = stbi_load(tex_name,
+                              &texture->width,
+                              &texture->height,
+                              &texture->channels, 0);
+
+    if (texture->channels != 3) {
+        stbi_image_free(texture->data);
+        return 0;
+    }
+
+    return !!(texture->data);
+}
+
+
+global_variable uint8 ttf_buffer[1 << 25];
+bool32 load_simple_font(const char *font_name, FontData *font_data, int32 window_height) {
+    FILE *font = NULL;
+    if ((font = fopen(font_name, "rb"))) {
+        fread(ttf_buffer, 1, 1 << 25, font);
+        fclose(font);
+
+        stbtt_InitFont(&font_data->font_info, ttf_buffer, 0);
+        font_data->char_scale = stbtt_ScaleForPixelHeight(&font_data->font_info, window_height / 40);
+        stbtt_GetFontVMetrics(&font_data->font_info, &font_data->ascent, &font_data->descent, &font_data->line_gap);
+        font_data->base_line = font_data->ascent * font_data->char_scale;
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+void *platform_allocate_memory(size_t memory_size) {
+    void *memory = VirtualAlloc(0, memory_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+
+    if (!memory) {
+        TRACE("MEMORY ALLOCATION FAILED: SIZE REQUESTED %zu", memory_size);
+        return NULL;
+    }
+
+    return memory;
+}
+
+void platform_free_memory(void *ptr) {
+    VirtualFree(ptr, 0, MEM_RELEASE);
+}
+
+FileObject
+platform_open_and_read_entire_file(char *file_name) {
+    FileObject result = {0};
+    FILE *fp = fopen(file_name, "rb");
+
+    if (!fp) return result;
+
+    /*
+     *
+     * NOTE(fuzzy):
+     * !fseek でもいいが、 == 0 としたほうが
+     * 「意図した値である事をチェックしている」感がでるのでこのまま
+     *
+     * 早期リターンを使用してもいいが、いちいちfclose(fp);をかくのも冗長なので
+     * ifを連ねることにする
+     *
+     * */
+    if(fseek(fp, 0, SEEK_END) == 0) {
+        size_t file_length = ftell(fp);
+
+        if (file_length > 0 && (fseek(fp, 0, SEEK_SET) == 0)) {
+            char *memory = (char *)platform_allocate_memory(file_length + 1);
+
+            if (memory) {
+                fread(memory, file_length, 1, fp);
+                fclose(fp);
+
+                memory[file_length] = '\0';
+                result.opened  = 1;
+                result.content = memory;
+                result.size    = file_length;
+
+                return result;
+            }
+        }
+    }
+
+    fclose(fp);
+    return result;
+}
+
 int32 WINAPI
 WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolete) {
     int32 window_width = 1600;
@@ -361,18 +359,29 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             bitmap_info.bmiHeader.biBitCount = 32;
             bitmap_info.bmiHeader.biCompression = BI_RGB;
 
+            // =======================================
+            // レンダリングに必要な物全般をセットアップ
+            // =======================================
+
             size_t core_memory_size = MEGABYTES(128);
-            void *memory = VirtualAlloc(0, core_memory_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            void   *memory = platform_allocate_memory(core_memory_size);
+
             if (!memory) {
                 MessageBox(window, "128MBのメモリの割り当てに失敗しました。", NULL, MB_OK);
                 return 0;
             }
+            Engine engine;
 
-            Arena core_arena((uint8*)memory, core_memory_size);
+            engine.core_memory.initialize((uint8 *)memory, core_memory_size);
 
-            // =======================================
-            // レンダリングに必要な物全般をセットアップ
-            // =======================================
+            size_t asset_capacity = 32;
+            engine.asset_table.models.initialize((Model *)engine.core_memory.alloc(asset_capacity * sizeof(Model)), asset_capacity);
+            engine.asset_table.textures.initialize((Texture *)engine.core_memory.alloc(asset_capacity * sizeof(Texture)), asset_capacity);
+
+            engine.platform.allocate_memory    = platform_allocate_memory;
+            engine.platform.deallocate_memory  = platform_free_memory;
+            engine.platform.open_and_read_file = platform_open_and_read_entire_file;
+
             // TODO(fuzzy): 未だ使っていない
             Property property;
             property.position = fVec3(0.0, 0.0, 0.0);
@@ -392,9 +401,9 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             size_t color_buffer_size = (window_width * window_height * sizeof(uint32));
             size_t z_buffer_size     = (window_width * window_height * sizeof(real32));
 
-            drawing_buffer.visible_buffer = (uint32 *)core_arena.alloc(color_buffer_size);
-            drawing_buffer.back_buffer    = (uint32 *)core_arena.alloc(color_buffer_size);
-            drawing_buffer.z_buffer       = (real32 *)core_arena.alloc(z_buffer_size);
+            drawing_buffer.visible_buffer = (uint32 *)engine.core_memory.alloc(color_buffer_size);
+            drawing_buffer.back_buffer    = (uint32 *)engine.core_memory.alloc(color_buffer_size);
+            drawing_buffer.z_buffer       = (real32 *)engine.core_memory.alloc(z_buffer_size);
 
             Camera camera;
             default_camera(&camera);
@@ -406,9 +415,8 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
                 return 0;
             }
 
-            Model model = {0};
             if (file_extension_matches(__argv[1], "obj")) {
-                if (!load_simple_model(__argv[1], &model)) {
+                if (!load_model(&engine, __argv[1])) {
                     MessageBox(window, "指定されたモデルがロードできませんでした。", NULL, MB_OK);
                     return 0;
                 }
@@ -416,16 +424,17 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
                 MessageBox(window, "指定されたモデルがロードできませんでした。", NULL, MB_OK);
                 return 0;
             }
-
-            Texture texture = {0};
             if(__argc >= 3) {
-                if (!load_simple_texture(__argv[2], &texture)) {
+                if (!load_texture(&engine, __argv[2])) {
                     // NOTE(fuzzy): @MemoryLeak
                     // どの道即終了するのでfree(model->... は行わない
                     MessageBox(window, "指定されたテクスチャがロードできませんでした。", NULL, MB_OK);
                     return 0;
                 }
             }
+            // TODO(fuzzy): コンパイルを通すためだけにここにある
+            Model model = engine.asset_table.models[0];
+            Texture texture = engine.asset_table.textures[0];
 
             MSG message;
 
@@ -465,7 +474,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
                 if (wireframe_on) {
                     draw_wire_model(&drawing_buffer, &model, &camera, &property, fg_color);
                 } else {
-                    if(texture.data && model.num_texcoords > 0) {
+                    if(texture.data && model.texcoords.count > 0) {
                         draw_textured_model(&drawing_buffer, &model, &camera, &property, &texture);
                     } else {
                         draw_filled_model(&drawing_buffer, &model, &camera, &property, fg_color);
@@ -541,12 +550,10 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance, char *cmd_line, int obsolet
             }
 
             stbi_image_free(texture.data);
-            VirtualFree(model.vertices,       0, MEM_RELEASE);
-            VirtualFree(model.texcoords,      0, MEM_RELEASE);
-            VirtualFree(model.normals,        0, MEM_RELEASE);
-            VirtualFree(model.face_indices,   0, MEM_RELEASE);
 
-            VirtualFree(core_arena.data, 0, MEM_RELEASE);
+            free_models(&engine);
+            free_textures(&engine);
+            platform_free_memory(engine.core_memory.data);
         } else {
             TRACE("CreateWindowEx failed.");
             BREAK
