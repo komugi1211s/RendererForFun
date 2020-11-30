@@ -3,7 +3,7 @@
 
 #include "general.h"
 #include "maths.h"
-#include "model.h"
+#include "asset.h"
 #include "engine.h"
 
 typedef struct ScreenBuffer {

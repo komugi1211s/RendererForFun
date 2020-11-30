@@ -1,7 +1,9 @@
 #ifndef _K_ENGINE_H
 #define _K_ENGINE_H
 
+#include "memory.h"
 #include "maths.h"
+#include "asset.h"
 
 /*
  * =========================================
@@ -11,10 +13,10 @@
  * レンダラは内部で下記３つの関数を必ず使うので
  * プログラム開始時に必ずplatform用の関数をセットアップする事。
  *
- * Platform.alloc   :: AllocateMemoryFunc
+ * Platform.allocate_memory   :: AllocateMemoryFunc
  * 引数と戻り値はmallocと同じ。指定された量のメモリを確保し、失敗したらNULLを返す。
  *
- * Platform.dealloc :: DeallocateMemoryFunc
+ * Platform.deallocate_memory :: DeallocateMemoryFunc
  * freeと同じ。指定されたメモリを解放する。
  * 指定されたメモリがAllocateMemoryFuncで確保されてなければ未定義。
  *
@@ -31,87 +33,19 @@
 
 typedef struct FileObject {
     bool32 opened;
-    uint8  *content;
     size_t size;
+    char   *content;
 } FileObject;
 
 typedef void *(*AllocateMemoryFunc)(size_t memory_size);
 typedef void  (*DeallocateMemoryFunc)(void *ptr);
 typedef FileObject (*OpenAndReadEntireFileFunc)(char *filename);
 
-void      *ALLOCATE_STUB(size_t F)  { NOT_IMPLEMENTED; return 0;   }
-void       DEALLOCATE_STUB(void *F) { NOT_IMPLEMENTED; return;     }
-FileObject OPEN_FILE_STUB(char *F)  { NOT_IMPLEMENTED; return {0}; }
-
 typedef struct Platform {
-    AllocateMemoryFunc        alloc;
-    DeallocateMemoryFunc      dealloc;
+    AllocateMemoryFunc        allocate_memory;
+    DeallocateMemoryFunc      deallocate_memory;
     OpenAndReadEntireFileFunc open_and_read_file;
 } Platform;
-
-/*
- * =========================================
- * Memory stuff.
- *
- * 内部でヒープメモリ確保関数を呼ばないので、自分で確保したバッキングバッファを与えるように。
- *
- * Arena
- * リニアなアリーナ。内部で16アラインを行うので確保したメモリ容量よりもデータが収まらない可能性がある。
- * 仕様として、こいつから確保したメモリをアリーナに返す事は出来ない（Free不可）。
- * ライフタイムが決まっている物をまとめて放り込むのに使う。
- *
- * TemporaryMemory
- * 親となるアリーナから派生するアリーナ。さくっと作ってさくっと解放するのに使う。
- * Arenaがフリーを行えない代わりに、TemporaryMemoryを作ってそのメモリ領域で作業をするのに便利。
- * 複数作成した場合は、最も新しいものから順に解放していく必要がある。
- *
- * Pool  - 未実装。普通に使うので実装予定。 TODO(fuzzy): メモリプールの実装。
- * =========================================
- * */
-
-global_variable const size_t MEMORY_ALIGNMENT = 16;
-
-uptr align_pointer_forward(uptr unaligned) {
-    uptr modulo = (unaligned & (MEMORY_ALIGNMENT - 1));
-    uptr aligned = unaligned;
-
-    if (modulo != 0) {
-        aligned += MEMORY_ALIGNMENT - modulo;
-    }
-
-    return aligned;
-}
-
-typedef struct TemporaryMemory TemporaryMemory;
-
-typedef struct Arena {
-    size_t capacity;
-    size_t used;
-    uint8  *data;
-
-    int32  temp_count;
-
-    Arena(uint8 *storage_ptr, size_t storage_capacity) {
-        capacity          = storage_capacity;
-        data = storage_ptr;
-        used = 0;
-        temp_count = 0;
-    }
-
-    uint8    *alloc(size_t allocation_size);
-    TemporaryMemory begin_temporary(size_t temparena_size);
-    void end_temporary(TemporaryMemory *child);
-} Arena;
-
-typedef struct TemporaryMemory {
-    size_t  capacity;
-    size_t  used;
-    uint8   *data;
-    Arena   *derived_from;
-
-    uint8 *alloc(size_t allocation_size);
-    void close();
-} TemporaryMemory;
 
 /*
  * =========================================
@@ -282,4 +216,10 @@ Color rgb_opaque(real32 r, real32 g, real32 b) {
 
     return result;
 }
+
+typedef struct Engine {
+    Arena      core_memory;
+    Platform   platform;
+    AssetTable asset_table;
+} Engine;
 #endif

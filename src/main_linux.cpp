@@ -16,24 +16,14 @@
 #include "general.h"
 #include "3rdparty.h"
 #include "maths.cpp"
+#include "memory.cpp"
 #include "engine.cpp"
-#include "model.cpp"
+#include "asset.cpp"
 #include "renderer.cpp"
 #include "imm.cpp"
 
 global_variable Atom wm_protocols;
 global_variable Atom wm_delete_window;
-
-// TODO(fuzzy): 今後asset.hに移す
-inline bool32
-file_extension_matches(char *file_name, const char *expected_extension) {
-    char *extension = strrchr(file_name, '.');
-    if (extension && extension != file_name) {
-        return (strcmp(extension+1, expected_extension) == 0);
-    } else {
-        return 0;
-    }
-}
 
 void update_camera_with_input(Camera *camera, Input *input, real32 dt) {
     PROFILE_FUNC;
@@ -133,50 +123,6 @@ bool32 load_simple_texture(const char *tex_name, Texture *texture) {
     return !!(texture->data);
 }
 
-bool32 load_simple_model(const char *model_name, Model *model) {
-    FILE *file;
-    if ((file = fopen(model_name, "rb"))) {
-        fseek(file, 0, SEEK_END);
-        size_t file_length = ftell(file);
-        fseek(file, 0, SEEK_SET);
-
-        // TODO(fuzzy): @MemoryLeak
-        // 現状はモデルのアンロード・ロードを実行時にGUIから行う機能を持っていない為、
-        // Modelに渡されるデータは全部解放されずにずっと残ったままになる。
-        //
-        // プロセス終了時にプロセスに割り当てられたメモリは全て掃除されるので現状は未だ問題はないが、メモリリークであることに変わりはない。
-        // 新しいモデルをロードする機能の実装を行う際は**必ず**アロケーターを先に書くか、
-        // RAIIなどでデータの破棄時に自動で解放するようにする事。
-
-        char *buffer     = (char *)malloc(file_length + 1);
-        model->vertices  = (fVector3 *)malloc(file_length * sizeof(fVector3));
-        model->texcoords = (fVector3 *)malloc(file_length * sizeof(fVector3));
-        model->normals   = (fVector3 *)malloc(file_length * sizeof(fVector3));
-        model->face_indices = (FaceId *)malloc(file_length * sizeof(FaceId));
-
-        ASSERT(buffer || model->vertices || model->texcoords || model->face_indices);
-        fread(buffer, 1, file_length, file);
-        fclose(file);
-
-        buffer[file_length] = '\0';
-        bool32 parsed = parse_obj(buffer, file_length, model);
-        free(buffer);
-
-        if(!parsed) {
-            free(model->vertices);
-            free(model->texcoords);
-            free(model->normals);
-            free(model->face_indices);
-
-            TRACE("Failed to Load model.");
-            return 0;
-        }
-    } else {
-        TRACE("Failed to Open the model file.");
-        return 0;
-    }
-    return 1;
-}
 
 #define EACH_STRING_SIZE 1024
 #define BUCKET_SIZE 16
@@ -285,7 +231,7 @@ platform_open_and_read_entire_file(char *file_name) {
         size_t file_length = ftell(fp);
 
         if (file_length > 0 && (fseek(fp, 0, SEEK_SET) == 0)) {
-            uint8 *memory = (uint8 *)platform_allocate_memory(file_length + 1);
+            char *memory = (char *)platform_allocate_memory(file_length + 1);
 
             if (memory) {
                 size_t actually_read = fread(memory, file_length, 1, fp);
@@ -363,15 +309,6 @@ int main(int argc, char **argv) {
                 XMapWindow(display, my_window);
                 XFlush(display);
 
-                size_t core_memory_size = MEGABYTES(128);
-                void *memory = malloc(core_memory_size);
-                if (!memory) {
-                    printf("128MBのメモリの割り当てに失敗しました。\n");
-                    return 0;
-                }
-
-                Arena core_arena((uint8*)memory, core_memory_size);
-
                 // =======================================
                 // レンダリングに必要な物全般をセットアップ
                 // =======================================
@@ -381,11 +318,24 @@ int main(int argc, char **argv) {
                 property.rotation = fVec3(0.0, 0.0, 0.0);
                 property.scale    = fVec3(1.0, 1.0, 1.0);
 
+                Engine engine;
 
-                Platform platform_api;
-                platform_api.alloc              = platform_allocate_memory;
-                platform_api.dealloc            = platform_free_memory;
-                platform_api.open_and_read_file = platform_open_and_read_entire_file;
+                size_t core_memory_size = MEGABYTES(128);
+                void *memory = malloc(core_memory_size);
+                if (!memory) {
+                    printf("128MBのメモリの割り当てに失敗しました。\n");
+                    return 0;
+                }
+
+                engine.core_memory.initialize((uint8*)memory, core_memory_size);
+
+                size_t asset_capacity = 32;
+                engine.asset_table.models.initialize((Model *)engine.core_memory.alloc(asset_capacity * sizeof(Model)), asset_capacity);
+                engine.asset_table.textures.initialize((Texture *)engine.core_memory.alloc(asset_capacity * sizeof(Texture)), asset_capacity);
+
+                engine.platform.allocate_memory    = platform_allocate_memory;
+                engine.platform.deallocate_memory  = platform_free_memory;
+                engine.platform.open_and_read_file = platform_open_and_read_entire_file;
 
                 ImmStyle default_style;
                 default_style.bg_color     = rgba(0.1, 0.1, 0.1, 0.5);
@@ -401,9 +351,9 @@ int main(int argc, char **argv) {
                 size_t color_buffer_size = (window_width * window_height * sizeof(uint32));
                 size_t z_buffer_size     = (window_width * window_height * sizeof(real32));
 
-                buffer.visible_buffer  = (uint32 *)core_arena.alloc(color_buffer_size);
-                buffer.back_buffer     = (uint32 *)core_arena.alloc(color_buffer_size);
-                buffer.z_buffer        = (real32 *)core_arena.alloc(z_buffer_size);
+                buffer.visible_buffer  = (uint32 *)engine.core_memory.alloc(color_buffer_size);
+                buffer.back_buffer     = (uint32 *)engine.core_memory.alloc(color_buffer_size);
+                buffer.z_buffer        = (real32 *)engine.core_memory.alloc(z_buffer_size);
 
                 Input input = {0};
 
@@ -417,9 +367,8 @@ int main(int argc, char **argv) {
                     return 0;
                 }
 
-                Model model = {0};
                 if (file_extension_matches(argv[1], "obj")) {
-                    if (!load_simple_model(argv[1], &model)) {
+                    if(!load_model(&engine, argv[0])) {
                         printf("指定されたモデルファイルの読み込みに失敗しました。\n");
                         return 0;
                     }
@@ -439,6 +388,9 @@ int main(int argc, char **argv) {
                         return 0;
                     }
                 }
+
+                // TODO(fuzzy): コンパイルを通すためだけにここにある
+                Model model = engine.asset_table.models[0];
 
                 // NOTE(fuzzy): SDL_GetPerformanceFrequencyから。
                 // SDL_GetPerformanceFrequencyはCLOCK_MONOTONIC_RAWを使用する際1000000000を返す
@@ -551,7 +503,7 @@ int main(int argc, char **argv) {
                     if (draw_wireframe) {
                         draw_wire_model(&buffer, &model, &camera, &property, fg_color);
                     } else {
-                        if(texture.data && model.num_texcoords > 0) {
+                        if(texture.data && model.texcoords.count > 0) {
                             draw_textured_model(&buffer, &model, &camera, &property, &texture);
                         } else {
                             draw_filled_model(&buffer, &model, &camera, &property, fg_color);
@@ -624,7 +576,7 @@ int main(int argc, char **argv) {
                     start_cycle = end_cycle;
                 }
 
-                free(core_arena.data);
+                free(engine.core_memory.data);
                 XCloseDisplay(display);
             } else {
                 TRACE("Failed to Open Window.");

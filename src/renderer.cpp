@@ -285,7 +285,7 @@ void draw_filled_model(ScreenBuffer *buffer, Model *model, Camera *camera, Prope
     fMat4x4 viewport = fMat4WorldToScreen(buffer->window_width, buffer->window_height, camera->z_near, camera->z_far);
 
     fMat4x4 mvp = fmul_fmat4x4(projection, view);
-    for (size_t i = 0; i < model->num_face_indices; ++i) {
+    for (size_t i = 0; i < model->face_ids.count; ++i) {
         Face face = {0};
         fVector3 light = { 1.0, 1.0, 1.0 };
         fVector4 fv4_vertices[3] = {0};
@@ -353,7 +353,7 @@ void draw_textured_model(ScreenBuffer *buffer, Model *model, Camera *camera, Pro
     fMat4x4 viewport = fMat4WorldToScreen(buffer->window_width, buffer->window_height, camera->z_near, camera->z_far);
 
     fMat4x4 mvp = fmul_fmat4x4(projection, view);
-    for (size_t i = 0; i < model->num_face_indices; ++i) {
+    for (size_t i = 0; i < model->face_ids.count; ++i) {
         Face face = {0};
         fVector3 light = { 1.0, 1.0, 1.0 };
         bool32 face_loaded = model->load_face(i, &face);
@@ -422,7 +422,7 @@ void draw_wire_model(ScreenBuffer *buffer, Model *model, Camera *camera, Propert
     fMat4x4 viewport = fMat4WorldToScreen(buffer->window_width, buffer->window_height, camera->z_near, camera->z_far);
 
     fMat4x4 mvp = fmul_fmat4x4(projection, view);
-    for (size_t i = 0; i < model->num_face_indices; ++i) {
+    for (size_t i = 0; i < model->face_ids.count; ++i) {
         Face face = {0};
         bool32 face_loaded = model->load_face(i, &face);
         if (face_loaded) {

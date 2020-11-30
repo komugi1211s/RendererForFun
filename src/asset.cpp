@@ -20,15 +20,15 @@
 #include "asset.h"
 
 bool32 Model::load_face(size_t index, Face *output) {
-    ASSERT(this->num_face_indices > index);
-    FaceId indexes = this->face_indices[index];
+    ASSERT(this->face_ids.count > index);
+    FaceId indexes = this->face_ids[index];
 
     // NOTE(fuzzy):
     // ここはASSERTで強制失敗するべきか、それともロードできない体を伝えるべきか？
     // モデルの正常なロードに失敗しているのであればAssertで強制失敗させても良い気もする。
 
     int32 v_max = FP_MAX_IN_3(indexes.vertex.x, indexes.vertex.y, indexes.vertex.z);
-    ASSERT((v_max - 1) < this->num_vertices);
+    ASSERT((v_max - 1) < this->vertices.count);
 
     output->vertices[0] = this->vertices[indexes.vertex.x - 1];
     output->vertices[1] = this->vertices[indexes.vertex.y - 1];
@@ -36,7 +36,7 @@ bool32 Model::load_face(size_t index, Face *output) {
 
     if (indexes.texcoord.x != 0) { // NOTE(fuzzy): 0始まりは有り得ない
         int32 t_max = FP_MAX_IN_3(indexes.texcoord.x, indexes.texcoord.y, indexes.texcoord.z);
-        ASSERT((t_max - 1) < this->num_texcoords);
+        ASSERT((t_max - 1) < this->texcoords.count);
 
         output->texcoords[0] = this->texcoords[indexes.texcoord.x - 1];
         output->texcoords[1] = this->texcoords[indexes.texcoord.y - 1];
@@ -47,7 +47,7 @@ bool32 Model::load_face(size_t index, Face *output) {
 
     if (indexes.normal.x != 0) {
         int32 n_max = FP_MAX_IN_3(indexes.normal.x, indexes.normal.y, indexes.normal.z);
-        ASSERT((n_max - 1) < this->num_normals);
+        ASSERT((n_max - 1) < this->normals.count);
 
         output->normals[0] = this->normals[indexes.normal.x - 1];
         output->normals[1] = this->normals[indexes.normal.y - 1];
@@ -98,7 +98,47 @@ char *parse_vertex_definitions(char *start, fVector3 *out, uint32 line_for_error
     return current;
 }
 
-bool32 parse_obj(ModelParseWorkspace *workspace, char *obj_file_buffer, size_t file_length) {
+char *eat_until_newline(char *buffer) {
+    while (*buffer && *buffer != '\n') buffer++;
+    return buffer;
+}
+
+ModelInfo do_obj_element_counting(char *obj_file_buffer, size_t file_length) {
+    ModelInfo result    = {0};
+
+    char *obj_file      = obj_file_buffer;
+    uint32 current_line = 0;
+
+    while(*obj_file) {
+        switch(*obj_file) {
+            case 'v':
+            {
+                if     (obj_file[1] == 't') result.texcoord_count += 1;
+                else if(obj_file[1] == 'n') result.normal_count   += 1;
+                else                        result.vertex_count   += 1;
+
+                obj_file = eat_until_newline(obj_file);
+            } break;
+
+            case 'f':
+            {
+                result.face_count += 1;
+                obj_file = eat_until_newline(obj_file);
+            } break;
+
+            case '\n':
+                obj_file++;
+                break;
+
+            default:
+                obj_file = eat_until_newline(obj_file);
+        }
+    }
+
+    return result;
+}
+
+bool32 parse_obj_file(Model *workspace, char *obj_file_buffer, size_t file_length) {
     char *obj_file      = obj_file_buffer;
     uint32 current_line = 0;
 
@@ -110,18 +150,14 @@ bool32 parse_obj(ModelParseWorkspace *workspace, char *obj_file_buffer, size_t f
             case 's':
             case 'o':
             case 'm':
-                while (*obj_file != '\n' && *obj_file != '\0') {
-                    obj_file++;
-                }
+                obj_file = eat_until_newline(obj_file);
                 break;
 
             // usemtl option is turned off right now.
             case 'u':
             {
                 if (strncmp(obj_file, "usemtl", 6) == 0) {
-                    while (*obj_file != '\n' && *obj_file != '\0') {
-                        obj_file++;
-                    }
+                    obj_file = eat_until_newline(obj_file);
                     break;
                 } else {
                     TRACE("Expected `usemtl` but did not match line %u", current_line);
@@ -129,11 +165,8 @@ bool32 parse_obj(ModelParseWorkspace *workspace, char *obj_file_buffer, size_t f
                 }
             } break;
 
-
             case '#':
-                while (*obj_file != '\n' && *obj_file != '\0') {
-                    obj_file++;
-                }
+                obj_file = eat_until_newline(obj_file);
                 break;
 
             case 'v':
@@ -152,34 +185,24 @@ bool32 parse_obj(ModelParseWorkspace *workspace, char *obj_file_buffer, size_t f
                 }
 
                 fVector3 result = {0};
-                fVector3 *out_array = NULL;
-                size_t next_position;
+                FixedArray<fVector3> *out_array = NULL;
 
                 if (next_char == 't') {
                     obj_file += 3; // Skip 'vt ' including spaces.
-                    out_array = model->texcoords;
-                    next_position = workspace->num_texcoords++;
-
-                    ASSERT(next_position < workspace->array_count_cap);
+                    out_array = &workspace->texcoords;
                 } else if (next_char == 'n') {
                     obj_file += 3; // Skip 'vn ' including spaces.
-                    out_array = model->normals;
-                    next_position = model->num_normals++;
-                    ASSERT(next_position < workspace->array_count_cap);
+                    out_array = &workspace->normals;
                 } else if (next_char == ' ') {
                     obj_file += 2; // Skip 'v ' including spaces.
-                    out_array = model->vertices;
-                    next_position = model->num_vertices++;
-
-                    ASSERT(next_position < workspace->array_count_cap);
+                    out_array = &workspace->vertices;
                 } else {
                     TRACE("Unexpected char when parsing v[?], `%c` at line %u", next_char, current_line);
                     return 0;
                 }
-
                 char *updated_obj_pointer = parse_vertex_definitions(obj_file, &result, current_line);
                 if (updated_obj_pointer) {
-                    out_array[next_position] = result;
+                    ASSERT(out_array->push(result));
                     obj_file = updated_obj_pointer;
                 } else {
                     TRACE("Parse vertex defintions failed.");
@@ -201,8 +224,6 @@ bool32 parse_obj(ModelParseWorkspace *workspace, char *obj_file_buffer, size_t f
             case 'f':
             {
                 obj_file++;
-                ASSERT(model->num_face_indices < maximum_idx);
-
                 char *skipped;
                 FaceId index_result = {0};
                 index_result.vertex.x = strtod(obj_file, &skipped);
@@ -261,8 +282,7 @@ bool32 parse_obj(ModelParseWorkspace *workspace, char *obj_file_buffer, size_t f
                     skipped++;
                 }
                 obj_file = skipped;
-
-                model->face_indices[model->num_face_indices++] = index_result;
+                ASSERT(workspace->face_ids.push(index_result));
             } break;
 
             default:
@@ -275,33 +295,54 @@ bool32 parse_obj(ModelParseWorkspace *workspace, char *obj_file_buffer, size_t f
 
 bool32 load_model(Engine *engine, char *filename) {
     if(!file_extension_matches(filename, "obj")) return 0;
+    // ファイルを読む
+    FileObject file_object = engine->platform.open_and_read_file(filename);
 
-    FileObject file_object = engine->platform.open_file(filename);
     if(file_object.opened) {
-        size_t work_vert_size   = file_object.size * sizeof(fVector3);
-        size_t work_norm_size   = file_object.size * sizeof(fVector3);
-        size_t work_tex_size    = file_object.size * sizeof(fVector3);
-        size_t work_faceid_size = file_object.size * sizeof(FaceId);
+        // ファイルが開けたら一時パスとして各エレメントの総数を数える
+        ModelInfo model_info = do_obj_element_counting(file_object.content, file_object.size);
 
-        size_t temporal_memory_size = (work_vert_size + work_norm_size + work_tex_size + work_faceid_size);
-        TemporaryMemory work_arena  = engine->core_arena.begin_temporary(temporary_size);
-
-        if (work_arena.capacity >= temporal_memory_size) {
-            ModelParseWorkspace workspace = {0};
-            workspace.vertices        = work_arena.alloc(work_vert_size);
-            workspace.texcoords       = work_arena.alloc(work_tex_size);
-            workspace.normals         = work_arena.alloc(work_norm_size);
-            workspace.face_indices    = work_arena.alloc(work_faceid_size);
-            workspace.array_count_cap = file_object.size;
-
-            parse_obj_file(&workspace, file_object.content, file_object.size);
-
-            Model *model = engine->asset_table->model_pool.alloc();
-            model->generation = engine->asset_table->model_pool.generation++;
-
-            engine->arena.end_temporary(work_arena);
+        // 専用のアロケーターを準備
+        size_t vertex_buffer_size   = (model_info.vertex_count   * sizeof(fVector3));
+        size_t texcoord_buffer_size = (model_info.texcoord_count * sizeof(fVector3));
+        size_t normal_buffer_size   = (model_info.normal_count   * sizeof(fVector3));
+        size_t faceid_buffer_size   = (model_info.face_count     * sizeof(FaceId));
+        uint8 *model_buffer = (uint8 *)engine->platform.allocate_memory(vertex_buffer_size + texcoord_buffer_size + normal_buffer_size + faceid_buffer_size);
+        if (!model_buffer) {
+            engine->platform.deallocate_memory(file_object.content);
+            TRACE("failed to allocate %zu memory for models.", vertex_buffer_size + texcoord_buffer_size + normal_buffer_size + faceid_buffer_size);
+            return 0;
         }
+
+        Arena model_memory;
+        model_memory.initialize(model_buffer, vertex_buffer_size + texcoord_buffer_size + normal_buffer_size + faceid_buffer_size);
+
+        Model model = {0};
+
+        model.memory_arena = model_memory;
+        model.vertices.initialize((fVector3*)model_memory.alloc(vertex_buffer_size), model_info.vertex_count);
+        model.texcoords.initialize((fVector3*)model_memory.alloc(texcoord_buffer_size), model_info.texcoord_count);
+        model.normals.initialize((fVector3*)model_memory.alloc(normal_buffer_size), model_info.normal_count);
+        model.face_ids.initialize((FaceId*)model_memory.alloc(faceid_buffer_size), model_info.face_count);
+
+        if(!parse_obj_file(&model, file_object.content, file_object.size)) {
+            engine->platform.deallocate_memory(model_memory.data);
+            engine->platform.deallocate_memory(file_object.content);
+            TRACE("Failed to parse models.");
+            return 0;
+        }
+
+        if(!engine->asset_table.models.push(model)) {
+            engine->platform.deallocate_memory(model_memory.data);
+            engine->platform.deallocate_memory(file_object.content);
+            TRACE("Failed to push model.");
+            return 0;
+        }
+
+        return 1;
     }
+    TRACE("Could not open a file.");
+    return 0;
 }
 
 
